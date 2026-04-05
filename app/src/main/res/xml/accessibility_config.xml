@@ -1,21 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    accessibilityEventTypes:
-      - typeWindowStateChanged  → app switch, new screen
-      - typeWindowContentChanged → content update (scroll, data load)
-      - typeViewScrolled         → scroll events (helps catch newly loaded video titles)
-      - typeViewFocused          → focus changes (catches URL bar focus in browsers)
-
-    accessibilityFlags:
-      - flagReportViewIds          → viewIdResourceName পাওয়া যায় (video title node খুঁজতে দরকার)
-      - flagIncludeNotImportantViews → invisible/unimportant view-ও traverse করা যায়
-                                       (video play-এর সময় hidden title node ধরতে জরুরি)
--->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/service_desc"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled|typeViewFocused"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagReportViewIds|flagIncludeNotImportantViews"
+    android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="100"
     android:settingsActivity=".MainActivity" />

@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -15,62 +14,23 @@ import java.util.concurrent.Executors
 class KeywordService : AccessibilityService() {
 
     private lateinit var prefs: SharedPreferences
-    private val handler  = Handler(Looper.getMainLooper())
+    private val handler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
     private var lastBlockTime = 0L
 
-    // Whitelist in-memory cache
+    // ── Whitelist in-memory cache ──────────────────────────────────────────
     private var whitelistCache: Set<String> = emptySet()
     internal var whitelistCacheTime = 0L
 
-    // ── Periodic video metadata scan ──────────────────────────────────────────
-    // Video play-এর সময় accessibility event fire না হলেও এটা প্রতি 3 সেকেন্ডে
-    // foreground video/browser app-এর metadata check করে।
-    private val videoScanRunnable = object : Runnable {
-        override fun run() {
-            try {
-                val pkg = currentForegroundPkg
-                if (pkg.isNotBlank() && isEnabled(this@KeywordService) &&
-                    !isPkgWhitelisted(pkg) &&
-                    (isBrowser(pkg) || isVideoApp(pkg)) &&
-                    isVideoMetaEnabled(this@KeywordService)
-                ) {
-                    val root = rootInActiveWindow
-                    if (root != null) {
-                        val meta = extractAllMetadata(root)
-                        if (meta.isNotBlank()) {
-                            val capturedPkg = pkg
-                            val capturedMeta = meta
-                            executor.execute {
-                                if (VideoMetaDetector.isAdultMeta(capturedMeta) ||
-                                    (isSoftAdultEnabled(this@KeywordService) &&
-                                     SoftAdultDetector.isSoftAdultContent(capturedMeta))
-                                ) {
-                                    handler.post {
-                                        val now = System.currentTimeMillis()
-                                        if (now - lastBlockTime >= 1_500L) {
-                                            lastBlockTime = now
-                                            blockPkg(capturedPkg)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-            handler.postDelayed(this, VIDEO_SCAN_INTERVAL_MS)
-        }
-    }
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // ── Foreground tracking ────────────────────────────────────────────────
+    // pkg → last seen timestamp, যাতে false positive কমে
+    private val recentPkgs = LinkedHashMap<String, Long>(16, 0.75f, true)
 
     override fun onServiceConnected() {
-        prefs     = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        instance  = this
+        prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        instance = this
         isRunning = true
         refreshWhitelistCache()
-        handler.postDelayed(videoScanRunnable, VIDEO_SCAN_INTERVAL_MS)
     }
 
     override fun onInterrupt() {}
@@ -79,16 +39,16 @@ class KeywordService : AccessibilityService() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
         executor.shutdown()
-        instance  = null
+        instance = null
         isRunning = false
     }
 
-    // ── Whitelist cache ───────────────────────────────────────────────────────
+    // ── Cache ──────────────────────────────────────────────────────────────
 
     private fun refreshWhitelistCache() {
         val now = System.currentTimeMillis()
-        if (now - whitelistCacheTime > 5_000L) {
-            whitelistCache     = loadWhitelistSet(this)
+        if (now - whitelistCacheTime > 3_000L) {
+            whitelistCache = loadWhitelistSet(this)
             whitelistCacheTime = now
         }
     }
@@ -98,7 +58,7 @@ class KeywordService : AccessibilityService() {
         return whitelistCache.contains(pkg)
     }
 
-    // ── Main accessibility event ──────────────────────────────────────────────
+    // ── Accessibility Events ───────────────────────────────────────────────
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
@@ -106,182 +66,136 @@ class KeywordService : AccessibilityService() {
         if (pkg == packageName) return
         if (!isEnabled(this)) return
 
-        // Foreground tracking
+        // Foreground tracking — window state changed এ update
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            if (!isSystemPkg(pkg)) currentForegroundPkg = pkg
+            if (!isSystemPkg(pkg)) {
+                currentForegroundPkg = pkg
+                recentPkgs[pkg] = System.currentTimeMillis()
+            }
         }
 
+        // ★ WHITELIST — সবার আগে, দুইভাবে চেক ★
+        // event pkg এবং currentForegroundPkg দুটোই check
         if (isPkgWhitelisted(pkg)) return
+        if (isPkgWhitelisted(currentForegroundPkg)) return
 
         val now = System.currentTimeMillis()
-        if (now - lastBlockTime < 1_500L) return
+        if (now - lastBlockTime < 1500L) return
 
-        // ── Fast path 1: known adult app ──────────────────────────────────────
+        // ── 1. Known adult app ─────────────────────────────────────────────
         if (isKnownAdultApp(pkg)) {
-            lastBlockTime = now; blockPkg(pkg); return
+            lastBlockTime = now; closeAndKillPkg(pkg); return
         }
 
         val isBrowserOrVideo = isBrowser(pkg) || isVideoApp(pkg)
         val root = rootInActiveWindow
 
-        // ── Fast path 2: URL check ────────────────────────────────────────────
+        // ── 2. Browser URL check ───────────────────────────────────────────
         if (isBrowser(pkg)) {
             val url = extractUrl(root)
             if (!url.isNullOrBlank()) {
                 if (isHardAdultUrl(url)) {
-                    lastBlockTime = now; blockPkg(pkg); return
+                    lastBlockTime = now; closeAndKillPkg(pkg); return
                 }
                 if (isSoftAdultEnabled(this) && SoftAdultDetector.isSoftAdultUrl(url)) {
-                    lastBlockTime = now; blockPkg(pkg); return
+                    lastBlockTime = now; closeAndKillPkg(pkg); return
                 }
             }
         }
 
-        // ── Collect text on main thread, match on background ──────────────────
+        // ── 3. Video metadata — title, tag, description ────────────────────
+        if (isBrowserOrVideo && isVideoMetaEnabled(this)) {
+            val meta = extractVideoMetadata(root)
+            if (meta.isNotBlank() && VideoMetaDetector.isAdultMeta(meta)) {
+                lastBlockTime = now; closeAndKillPkg(pkg); return
+            }
+        }
+
+        // ── 4. Full screen text collect ────────────────────────────────────
         val screenText = buildString { collectText(root, this) }
-        val metaText   = if (isBrowserOrVideo && isVideoMetaEnabled(this))
-            extractAllMetadata(root) else ""
+        if (screenText.isBlank()) return
 
-        if (screenText.isBlank() && metaText.isBlank()) return
-
-        val capturedPkg  = pkg
-        val capturedBV   = isBrowserOrVideo
-
-        executor.execute {
-            val block = runDetection(capturedPkg, capturedBV, screenText, metaText)
-            if (block) {
-                handler.post {
-                    val t = System.currentTimeMillis()
-                    if (t - lastBlockTime >= 1_500L) {
-                        lastBlockTime = t
-                        blockPkg(capturedPkg)
-                    }
-                }
-            }
-        }
-    }
-
-    /** Keyword + content detection — background thread */
-    private fun runDetection(
-        pkg: String,
-        isBrowserOrVideo: Boolean,
-        screenText: String,
-        metaText: String
-    ): Boolean {
-        // Video metadata
-        if (metaText.isNotBlank()) {
-            if (isVideoMetaEnabled(this) && VideoMetaDetector.isAdultMeta(metaText)) return true
-            if (isSoftAdultEnabled(this) && isBrowserOrVideo &&
-                SoftAdultDetector.isSoftAdultContent(metaText)) return true
-        }
-
-        if (screenText.isBlank()) return false
-
-        // User keywords — সব app
-        val userKw = getUserKeywords()
-        if (userKw.isNotEmpty()) {
+        // ── 5. User keywords — সব app ─────────────────────────────────────
+        val userKeywords = getUserKeywords()
+        if (userKeywords.isNotEmpty()) {
             val lower = screenText.lowercase(Locale.getDefault())
-            if (userKw.any { it.isNotBlank() && lower.contains(it.lowercase(Locale.getDefault())) })
-                return true
+            if (userKeywords.any {
+                it.isNotBlank() && lower.contains(it.lowercase(Locale.getDefault()))
+            }) {
+                lastBlockTime = now; closeAndKillPkg(pkg); return
+            }
         }
 
-        // Hard adult — সব app
-        if (isAdultTextDetectEnabled(this) && AdultContentDetector.isAdultContent(screenText))
-            return true
+        // ── 6. Hard adult text ─────────────────────────────────────────────
+        if (isAdultTextDetectEnabled(this) && AdultContentDetector.isAdultContent(screenText)) {
+            lastBlockTime = now; closeAndKillPkg(pkg); return
+        }
 
-        // Soft adult — browser + video only
+        // ── 7. Soft adult — browser + video only ───────────────────────────
         if (isSoftAdultEnabled(this) && isBrowserOrVideo &&
-            SoftAdultDetector.isSoftAdultContent(screenText))
-            return true
-
-        return false
+            SoftAdultDetector.isSoftAdultContent(screenText)
+        ) {
+            lastBlockTime = now; closeAndKillPkg(pkg)
+        }
     }
 
-    // ── Block ─────────────────────────────────────────────────────────────────
+    // ── Video Metadata Deep Extraction ────────────────────────────────────────
+    // YouTube, TikTok, Instagram, Facebook এ video title/tag screen node এ থাকে
+    // কিন্তু collectText এ miss হয় কারণ এগুলো sometimes hidden/overlaid node
 
-    fun blockPkg(pkg: String) {
-        performGlobalAction(GLOBAL_ACTION_HOME)
-        BlockStatsManager.recordBlock(this, pkg)
-        killPkg(pkg)
-        handler.postDelayed({ killPkg(pkg) }, 300)
-    }
-
-    private fun killPkg(pkg: String) {
-        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        try {
-            am.appTasks.forEach { task ->
-                if (task.taskInfo.baseActivity?.packageName == pkg)
-                    task.finishAndRemoveTask()
-            }
-            am.killBackgroundProcesses(pkg)
-        } catch (_: Exception) {}
-    }
-
-    // ── Video / Metadata extraction ───────────────────────────────────────────
-    // Video play চলাকালীন screen-এ text দেখা না গেলেও accessibility tree-তে
-    // title, description, tag থাকে। এখানে INVISIBLE node-সহ সব traverse করা হয়।
-
-    /**
-     * সব ধরনের metadata একসাথে collect করে — visible বা invisible যাই হোক।
-     * Event-based ও periodic scan দুটোতেই call হয়।
-     */
-    private fun extractAllMetadata(root: AccessibilityNodeInfo?): String {
+    private fun extractVideoMetadata(root: AccessibilityNodeInfo?): String {
         root ?: return ""
         val sb = StringBuilder()
-        // Pass 1: resource ID দিয়ে নির্দিষ্ট node খোঁজো
-        collectMetaByResourceId(root, sb)
-        // Pass 2: হ্যাশট্যাগ / মেনশন
-        collectHashtagsAndMentions(root, sb)
-        // Pass 3: content description (invisible node-সহ)
-        collectContentDescriptions(root, sb)
-        return sb.toString().trim()
+        val targetIds = setOf(
+            "title", "video_title", "media_title", "item_title",
+            "content_title", "player_title", "description",
+            "video_description", "channel_name", "author_name",
+            "tag", "hashtag", "caption", "subtitle", "label",
+            // YouTube specific
+            "watch_title", "engagement_panel_title",
+            // Instagram specific
+            "media_caption", "reel_title",
+            // TikTok specific
+            "video_desc", "author_username",
+            // Facebook
+            "story_title", "feed_title"
+        )
+        collectMetaDeep(root, targetIds, sb, depth = 0)
+        return sb.toString()
     }
 
-    private val META_IDS = setOf(
-        "title", "video_title", "media_title", "item_title",
-        "content_title", "player_title", "description",
-        "video_description", "channel_name", "author_name",
-        "tag", "hashtag", "caption", "subtitle",
-        // YouTube-specific
-        "engagement_panel_title", "collapsed_title",
-        "watch_next_card_headline", "metadata_container",
-        // TikTok-specific
-        "desc", "author", "challenge_tag",
-        // Facebook / Instagram
-        "story_header", "inline_activities",
-        // Generic video players
-        "media_info", "info_container", "overlay_title"
-    )
+    private fun collectMetaDeep(
+        node: AccessibilityNodeInfo?,
+        targetIds: Set<String>,
+        sb: StringBuilder,
+        depth: Int
+    ) {
+        if (node == null || depth > 12) return
 
-    private fun collectMetaByResourceId(node: AccessibilityNodeInfo?, sb: StringBuilder) {
-        node ?: return
         val resId = node.viewIdResourceName?.lowercase(Locale.getDefault()) ?: ""
         val text  = node.text?.toString() ?: ""
         val desc  = node.contentDescription?.toString() ?: ""
 
-        if (META_IDS.any { resId.contains(it) }) {
-            if (text.isNotBlank()) sb.append(text).append(' ')
-            if (desc.isNotBlank()) sb.append(desc).append(' ')
+        val isTarget = targetIds.any { resId.contains(it) }
+
+        if (isTarget) {
+            if (text.isNotBlank()) sb.append(text).append(" ")
+            if (desc.isNotBlank()) sb.append(desc).append(" ")
         }
-        for (i in 0 until node.childCount) collectMetaByResourceId(node.getChild(i), sb)
-    }
 
-    private fun collectHashtagsAndMentions(node: AccessibilityNodeInfo?, sb: StringBuilder) {
-        node ?: return
-        val text = node.text?.toString() ?: ""
-        if (text.contains('#') || text.startsWith('@')) sb.append(text).append(' ')
-        for (i in 0 until node.childCount) collectHashtagsAndMentions(node.getChild(i), sb)
-    }
+        // Hashtag সব node থেকে নাও
+        if (text.contains("#") || text.startsWith("@")) {
+            sb.append(text).append(" ")
+        }
 
-    /**
-     * সব node-এর contentDescription collect করো — visible না হলেও।
-     * Video player-এ title প্রায়ই contentDescription হিসেবে থাকে।
-     */
-    private fun collectContentDescriptions(node: AccessibilityNodeInfo?, sb: StringBuilder) {
-        node ?: return
-        val desc = node.contentDescription?.toString() ?: ""
-        if (desc.length in 4..300) sb.append(desc).append(' ') // too short = icon desc, too long = skip
-        for (i in 0 until node.childCount) collectContentDescriptions(node.getChild(i), sb)
+        // Long text যা title হতে পারে (30+ char, video description ধরনের)
+        if (!isTarget && text.length in 10..300 && depth <= 5) {
+            sb.append(text).append(" ")
+        }
+
+        for (i in 0 until node.childCount) {
+            collectMetaDeep(node.getChild(i), targetIds, sb, depth + 1)
+        }
     }
 
     // ── URL extraction ────────────────────────────────────────────────────────
@@ -291,11 +205,10 @@ class KeywordService : AccessibilityService() {
         val resId = node.viewIdResourceName?.lowercase(Locale.getDefault()) ?: ""
         if (node.className?.contains("EditText") == true ||
             resId.contains("url") || resId.contains("address") ||
-            resId.contains("omnibox") || resId.contains("search") ||
-            resId.contains("location")
+            resId.contains("omnibox") || resId.contains("search")
         ) {
             val text = node.text?.toString() ?: ""
-            if (text.contains('.') && (
+            if (text.contains(".") && (
                 text.startsWith("http") || text.contains("www.") ||
                 text.matches(Regex(".*\\.[a-z]{2,}.*"))
             )) return text
@@ -312,7 +225,23 @@ class KeywordService : AccessibilityService() {
                ADULT_KEYWORDS_URL.any { lower.contains(it) }
     }
 
-    // ── Screen text collection ────────────────────────────────────────────────
+    // ── Block ─────────────────────────────────────────────────────────────────
+
+    fun closeAndKillPkg(pkg: String) {
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        fun kill() = try {
+            am.appTasks.forEach { task ->
+                if (task.taskInfo.baseActivity?.packageName == pkg)
+                    task.finishAndRemoveTask()
+            }
+            am.killBackgroundProcesses(pkg)
+        } catch (_: Exception) {}
+        kill()
+        handler.postDelayed(::kill, 300)
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun collectText(node: AccessibilityNodeInfo?, sb: StringBuilder) {
         node ?: return
@@ -320,8 +249,6 @@ class KeywordService : AccessibilityService() {
         node.contentDescription?.let { sb.append(it).append(' ') }
         for (i in 0 until node.childCount) collectText(node.getChild(i), sb)
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun getUserKeywords(): List<String> =
         (prefs.getString(KEY_WORDS, "") ?: "")
@@ -331,9 +258,9 @@ class KeywordService : AccessibilityService() {
         pkg == "android" || pkg.startsWith("com.android.systemui") ||
         pkg.contains("inputmethod") || pkg.contains("keyboard")
 
-    private fun isBrowser(pkg: String)       = BROWSER_PACKAGES.any  { pkg.contains(it) }
-    private fun isVideoApp(pkg: String)      = VIDEO_PACKAGES.any    { pkg.contains(it) }
-    private fun isKnownAdultApp(pkg: String) = KNOWN_ADULT_APPS.any  { pkg.contains(it) }
+    private fun isBrowser(pkg: String)      = BROWSER_PACKAGES.any { pkg.contains(it) }
+    private fun isVideoApp(pkg: String)     = VIDEO_PACKAGES.any  { pkg.contains(it) }
+    private fun isKnownAdultApp(pkg: String) = KNOWN_ADULT_APPS.any { pkg.contains(it) }
 
     // ── Companion ─────────────────────────────────────────────────────────────
 
@@ -347,97 +274,68 @@ class KeywordService : AccessibilityService() {
         const val KEY_VIDEO_META = "video_meta"
         const val DELIMITER      = "|||"
 
-        private const val VIDEO_SCAN_INTERVAL_MS = 3_000L  // 3 সেকেন্ডে একবার video check
-
-        var instance             : KeywordService? = null
-        var isRunning              = false
-        var currentForegroundPkg   = ""
-
-        // ── Package lists ─────────────────────────────────────────────────────
+        var instance           : KeywordService? = null
+        var isRunning            = false
+        var currentForegroundPkg = ""
 
         val BROWSER_PACKAGES = setOf(
-            "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary",
-            "org.mozilla.firefox", "org.mozilla.firefox_beta", "org.mozilla.fenix",
-            "org.mozilla.focus", "org.mozilla.klar",
-            "com.microsoft.emmx",
-            "com.opera.browser", "com.opera.mini.native", "com.opera.gx",
-            "com.brave.browser",
-            "com.kiwibrowser.browser",
-            "com.sec.android.app.sbrowser",
-            "com.UCMobile.intl", "com.uc.browser.en",
-            "com.mi.globalbrowser",
-            "com.duckduckgo.mobile.android",
-            "com.vivaldi.browser",
-            "com.ecosia.android",
-            "com.yandex.browser",
-            "com.tor.browser", "org.torproject.torbrowser",
-            "mark.via", "mark.via.gp",
-            "com.puffin.browser",
-            "acr.browser.lightning",
-            "com.amazon.cloud9"
+            "com.android.chrome", "org.mozilla.firefox",
+            "org.mozilla.firefox_beta", "com.microsoft.emmx",
+            "com.opera.browser", "com.opera.mini.native",
+            "com.brave.browser", "com.kiwibrowser.browser",
+            "com.sec.android.app.sbrowser", "com.UCMobile.intl",
+            "com.uc.browser.en", "com.mi.globalbrowser",
+            "com.duckduckgo.mobile.android", "com.vivaldi.browser",
+            "com.ecosia.android", "com.yandex.browser"
         )
 
         val VIDEO_PACKAGES = setOf(
             "com.google.android.youtube",
-            "com.google.android.youtube.tv",
             "com.instagram.android",
-            "com.facebook.katana", "com.facebook.lite",
-            "com.twitter.android", "com.x.android",
+            "com.facebook.katana",
+            "com.twitter.android",
             "com.zhiliaoapp.musically",
             "com.ss.android.ugc.trill",
-            "com.ss.android.ugc.aweme",
-            "com.moj.app",
-            "in.sharechat.app",
-            "com.snapchat.android",
-            "com.likee.video",
-            "com.josh.fun",
-            "com.mx.player", "com.mx.player.lite",
-            "com.mxtech.videoplayer.ad", "com.mxtech.videoplayer.j",
-            "org.videolan.vlc",
             "com.reddit.frontpage",
             "com.pinterest",
+            "com.snapchat.android",
             "tv.twitch.android.app",
+            "com.mx.player",
+            "org.videolan.vlc",
+            "com.mxtech.videoplayer.ad",
             "com.dailymotion.dailymotion",
-            "com.vimeo.android.videoapp",
-            "com.whatsapp",
-            "tv.periscope.android",
-            "com.bigo.live",
-            "com.nimo.live"
+            "com.vimeo.android.videoapp"
         )
 
         val KNOWN_ADULT_APPS = setOf(
             "pornhub", "xvideos", "xnxx", "xhamster",
             "redtube", "youporn", "tube8", "spankbang",
-            "brazzers", "onlyfans", "faphouse", "fansly",
+            "brazzers", "onlyfans", "faphouse",
             "chaturbate", "stripchat", "bongacams",
             "badoo", "adultfriendfinder",
             "sexcam", "livejasmin", "camsoda",
-            "hentai", "nhentai", "e-hentai",
-            "beeg", "eporner", "drtuber",
-            "myfreecams", "cam4", "flirt4free"
+            "hentai", "nhentai", "e-hentai"
         )
 
         val ADULT_DOMAINS = setOf(
             "pornhub.com", "xvideos.com", "xnxx.com", "xhamster.com",
             "redtube.com", "youporn.com", "tube8.com", "spankbang.com",
             "eporner.com", "tnaflix.com", "beeg.com", "drtuber.com",
-            "hqporner.com", "4tube.com", "porntrex.com", "porn.com",
+            "hqporner.com", "4tube.com", "porntrex.com",
             "brazzers.com", "bangbros.com", "naughtyamerica.com",
             "realitykings.com", "mofos.com", "kink.com",
             "onlyfans.com", "fansly.com", "manyvids.com",
             "chaturbate.com", "stripchat.com", "bongacams.com",
             "livejasmin.com", "camsoda.com", "cam4.com",
-            "myfreecams.com", "flirt4free.com", "streamate.com",
+            "myfreecams.com", "flirt4free.com",
             "rule34.xxx", "gelbooru.com", "e-hentai.org",
-            "nhentai.net", "hentaihaven.xxx", "hentai2read.com"
+            "nhentai.net", "hentaihaven.xxx"
         )
 
         val ADULT_KEYWORDS_URL = setOf(
             "/porn", "/sex", "/xxx", "/nude", "/naked",
             "/hentai", "/nsfw", "/adult", "porn", "xvideo", "xnxx"
         )
-
-        // ── SharedPrefs helpers ───────────────────────────────────────────────
 
         private fun p(ctx: Context) =
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -461,10 +359,12 @@ class KeywordService : AccessibilityService() {
             else raw.split(DELIMITER).filter { it.isNotBlank() }.toHashSet()
         }
 
+        fun isWhitelisted(ctx: Context, pkg: String): Boolean =
+            loadWhitelistSet(ctx).contains(pkg)
+
         fun saveKeywords(ctx: Context, list: List<String>) =
-            p(ctx).edit()
-                .putString(KEY_WORDS, list.filter { it.isNotBlank() }.joinToString(DELIMITER))
-                .apply()
+            p(ctx).edit().putString(KEY_WORDS,
+                list.filter { it.isNotBlank() }.joinToString(DELIMITER)).apply()
 
         fun loadKeywords(ctx: Context): MutableList<String> {
             val raw = p(ctx).getString(KEY_WORDS, "") ?: ""
@@ -472,16 +372,24 @@ class KeywordService : AccessibilityService() {
             else raw.split(DELIMITER).filter { it.isNotBlank() }.toMutableList()
         }
 
-        fun setEnabled(ctx: Context, v: Boolean)  = p(ctx).edit().putBoolean(KEY_ENABLED, v).apply()
-        fun isEnabled(ctx: Context)               = p(ctx).getBoolean(KEY_ENABLED, true)
+        fun setEnabled(ctx: Context, v: Boolean) =
+            p(ctx).edit().putBoolean(KEY_ENABLED, v).apply()
+        fun isEnabled(ctx: Context) =
+            p(ctx).getBoolean(KEY_ENABLED, true)
 
-        fun setAdultTextDetect(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean(KEY_ADULT_TEXT, v).apply()
-        fun isAdultTextDetectEnabled(ctx: Context)        = p(ctx).getBoolean(KEY_ADULT_TEXT, true)
+        fun setAdultTextDetect(ctx: Context, v: Boolean) =
+            p(ctx).edit().putBoolean(KEY_ADULT_TEXT, v).apply()
+        fun isAdultTextDetectEnabled(ctx: Context) =
+            p(ctx).getBoolean(KEY_ADULT_TEXT, true)
 
-        fun setSoftAdult(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean(KEY_SOFT_ADULT, v).apply()
-        fun isSoftAdultEnabled(ctx: Context)        = p(ctx).getBoolean(KEY_SOFT_ADULT, true)
+        fun setSoftAdult(ctx: Context, v: Boolean) =
+            p(ctx).edit().putBoolean(KEY_SOFT_ADULT, v).apply()
+        fun isSoftAdultEnabled(ctx: Context) =
+            p(ctx).getBoolean(KEY_SOFT_ADULT, true)
 
-        fun setVideoMeta(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean(KEY_VIDEO_META, v).apply()
-        fun isVideoMetaEnabled(ctx: Context)        = p(ctx).getBoolean(KEY_VIDEO_META, true)
+        fun setVideoMeta(ctx: Context, v: Boolean) =
+            p(ctx).edit().putBoolean(KEY_VIDEO_META, v).apply()
+        fun isVideoMetaEnabled(ctx: Context) =
+            p(ctx).getBoolean(KEY_VIDEO_META, true)
     }
 }
