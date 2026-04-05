@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Device Admin policy.
+    No special policies needed — just being registered as Device Admin
+    is enough to prevent easy uninstall. The user must go to
+    Settings → Security → Device Admin and deactivate first.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies />
+</device-admin>
