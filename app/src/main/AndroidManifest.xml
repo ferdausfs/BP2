@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Core permissions -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <uses-permission android:name="android.permission.GET_TASKS" />
-    <!-- Device Admin — uninstall protection -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Notification Listener — video title/metadata -->
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="false"
@@ -17,9 +16,8 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
 
-        <!-- Main Activity -->
-        <activity
-            android:name=".MainActivity"
+        <!-- Main -->
+        <activity android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -28,36 +26,58 @@
             </intent-filter>
         </activity>
 
+        <!-- Block warning screen -->
+        <activity android:name=".BlockedActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:showOnLockScreen="true"
+            android:excludeFromRecents="true"/>
+
+        <!-- PIN screen -->
+        <activity android:name=".PinActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.NoActionBar"/>
+
+        <!-- Stats/History screen -->
+        <activity android:name=".StatsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"/>
+
         <!-- Accessibility Service -->
-        <service
-            android:name=".KeywordService"
+        <service android:name=".KeywordService"
             android:exported="true"
             android:label="@string/service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
+            <meta-data android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config" />
         </service>
 
-        <!-- Device Admin Receiver — uninstall protection -->
-        <receiver
-            android:name=".AdminReceiver"
+        <!-- Device Admin -->
+        <receiver android:name=".AdminReceiver"
             android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
+            <meta-data android:name="android.app.device_admin"
                 android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
 
-        <!-- Notification Listener — video metadata from notifications -->
-        <service
-            android:name=".VideoNotificationListener"
+        <!-- Boot Receiver -->
+        <receiver android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Notification Listener -->
+        <service android:name=".VideoNotificationListener"
             android:exported="true"
             android:label="@string/notif_listener_label"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
