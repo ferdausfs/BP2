@@ -31,6 +31,12 @@ class KeywordService : AccessibilityService() {
         instance = this
         isRunning = true
         refreshWhitelistCache()
+        // AI scan start — model থাকলে
+        if (NsfwModelManager.isEnabled(this) && NsfwModelManager.loadModel(this)) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                NsfwScanService.start(this)
+            }
+        }
     }
 
     override fun onInterrupt() {}
@@ -38,6 +44,8 @@ class KeywordService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         flushUsage()
+        NsfwScanService.stop()
+        NsfwModelManager.unloadModel()
         handler.removeCallbacksAndMessages(null)
         executor.shutdown()
         instance = null
@@ -180,7 +188,7 @@ class KeywordService : AccessibilityService() {
 
     // ── Central block trigger — log + warning screen ───────────────────────
 
-    private fun triggerBlock(pkg: String, reason: String) {
+    internal fun triggerBlock(pkg: String, reason: String) {
         val appLabel = getAppLabel(pkg)
 
         // Log it
@@ -393,5 +401,65 @@ class KeywordService : AccessibilityService() {
         fun isSoftAdultEnabled(ctx: Context) = p(ctx).getBoolean(KEY_SOFT_ADULT, true)
         fun setVideoMeta(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean(KEY_VIDEO_META, v).apply()
         fun isVideoMetaEnabled(ctx: Context) = p(ctx).getBoolean(KEY_VIDEO_META, true)
+    }
+}
+
+// Extension functions — NsfwScanService ও ModelSettingsActivity এর জন্য
+fun KeywordService.triggerBlockPublic(pkg: String, reason: String) {
+    triggerBlock(pkg, reason)
+}
+
+fun KeywordService.onNsfwModelChanged() {
+    if (NsfwModelManager.isEnabled(this) && NsfwModelManager.isModelLoaded()) {
+        NsfwScanService.start(this)
+    } else {
+        NsfwScanService.stop()
+    }
+}
+
+fun KeywordService.requestTestScan() {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        takeScreenshot(
+            android.view.Display.DEFAULT_DISPLAY,
+            mainExecutor,
+            object : android.accessibilityservice.AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(
+                    screenshot: android.accessibilityservice.AccessibilityService.ScreenshotResult
+                ) {
+                    val hwBuffer = screenshot.hardwareBuffer ?: return
+                    val bitmap = android.graphics.Bitmap.wrapHardwareBuffer(hwBuffer, null)
+                        ?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                    hwBuffer.close()
+                    bitmap ?: return
+
+                    Thread {
+                        val (isAdult, conf) = NsfwModelManager.scan(this@requestTestScan, bitmap)
+                        val detailed = NsfwModelManager.scanDetailed(bitmap)
+                        bitmap.recycle()
+
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            val msg = buildString {
+                                append("Test Result:\n")
+                                append("Adult: ${if (isAdult) "✅ YES" else "❌ NO"}\n")
+                                append("Confidence: ${"%.1f".format(conf * 100)}%\n\n")
+                                detailed?.entries?.forEach { (label, score) ->
+                                    append("$label: ${"%.1f".format(score * 100)}%\n")
+                                }
+                            }
+                            android.widget.Toast.makeText(
+                                this@requestTestScan, msg, android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }.start()
+                }
+                override fun onFailure(errorCode: Int) {
+                    android.widget.Toast.makeText(
+                        this@requestTestScan,
+                        "Screenshot নেওয়া যায়নি (error: $errorCode)",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        )
     }
 }

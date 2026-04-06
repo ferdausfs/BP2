@@ -43,6 +43,12 @@
             android:exported="false"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"/>
 
+
+        <!-- AI Model Settings -->
+        <activity android:name=".ModelSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"/>
+
         <!-- Accessibility Service -->
         <service android:name=".KeywordService"
             android:exported="true"

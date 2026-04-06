@@ -135,7 +135,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateStatsPreview() {
         val today = BlockLogManager.getTodayCount(this)
-        b.tvStatsPreview.text = "আজকে $today বার block হয়েছে"
+        val aiStatus = if (NsfwModelManager.hasAnyModel(this)) {
+            if (NsfwModelManager.isEnabled(this)) " • 🤖 AI চালু" else " • 🤖 AI বন্ধ"
+        } else " • 🤖 No model"
+        b.tvStatsPreview.text = "আজকে $today বার block হয়েছে$aiStatus"
     }
 
     // ── Permission Buttons ────────────────────────────────────────────────────
@@ -200,6 +203,10 @@ class MainActivity : AppCompatActivity() {
         // Stats
         b.btnViewStats.setOnClickListener {
             startActivity(Intent(this, StatsActivity::class.java))
+        }
+
+        b.btnAiModel.setOnClickListener {
+            startActivity(Intent(this, ModelSettingsActivity::class.java))
         }
 
         // Panic (temp disable 30 min)
