@@ -4,22 +4,15 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import java.util.concurrent.Executors
 
-/**
- * AI Model Settings Screen
- *
- * এখান থেকে:
- * - Model import/remove করা যাবে
- * - Model type সেট করা যাবে (5-class / 2-class)
- * - Threshold adjust করা যাবে
- * - AI scan চালু/বন্ধ করা যাবে
- * - Model info দেখা যাবে
- */
 class ModelSettingsActivity : AppCompatActivity() {
 
     private lateinit var tvModelName   : TextView
@@ -31,34 +24,40 @@ class ModelSettingsActivity : AppCompatActivity() {
     private lateinit var tvThreshold   : TextView
     private lateinit var btnImport     : Button
     private lateinit var btnRemove     : Button
-    private lateinit var btnTestScan   : Button
+    private lateinit var btnTest       : Button
     private lateinit var btnBack       : Button
-    private lateinit var btnDownloadInfo: Button
+    private lateinit var btnGuide      : Button
+    private lateinit var progressBar   : ProgressBar
+    private lateinit var tvProgress    : TextView
+
+    private val bgExecutor  = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val modelPicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.data?.let { uri -> importModel(uri) }
-        }
+        if (result.resultCode == Activity.RESULT_OK)
+            result.data?.data?.let { importModelFromUri(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_model_settings)
 
-        tvModelName    = findViewById(R.id.tvModelName)
-        tvModelInfo    = findViewById(R.id.tvModelInfo)
-        tvModelStatus  = findViewById(R.id.tvModelStatus)
-        switchAiScan   = findViewById(R.id.switchAiScan)
-        spinnerType    = findViewById(R.id.spinnerModelType)
-        seekThreshold  = findViewById(R.id.seekThreshold)
-        tvThreshold    = findViewById(R.id.tvThreshold)
-        btnImport      = findViewById(R.id.btnImportModel)
-        btnRemove      = findViewById(R.id.btnRemoveModel)
-        btnTestScan    = findViewById(R.id.btnTestScan)
-        btnBack        = findViewById(R.id.btnBack)
-        btnDownloadInfo = findViewById(R.id.btnDownloadInfo)
+        tvModelName   = findViewById(R.id.tvModelName)
+        tvModelInfo   = findViewById(R.id.tvModelInfo)
+        tvModelStatus = findViewById(R.id.tvModelStatus)
+        switchAiScan  = findViewById(R.id.switchAiScan)
+        spinnerType   = findViewById(R.id.spinnerModelType)
+        seekThreshold = findViewById(R.id.seekThreshold)
+        tvThreshold   = findViewById(R.id.tvThreshold)
+        btnImport     = findViewById(R.id.btnImportModel)
+        btnRemove     = findViewById(R.id.btnRemoveModel)
+        btnTest       = findViewById(R.id.btnTestScan)
+        btnBack       = findViewById(R.id.btnBack)
+        btnGuide      = findViewById(R.id.btnDownloadInfo)
+        progressBar   = findViewById(R.id.progressBar)
+        tvProgress    = findViewById(R.id.tvProgress)
 
         setupSpinner()
         setupThreshold()
@@ -71,58 +70,77 @@ class ModelSettingsActivity : AppCompatActivity() {
         refreshUI()
     }
 
-    // ── UI Refresh ────────────────────────────────────────────────────────────
+    // ── UI ────────────────────────────────────────────────────────────────────
 
     private fun refreshUI() {
         val hasModel = NsfwModelManager.hasAnyModel(this)
         val isLoaded = NsfwModelManager.isModelLoaded()
+        val isEnabled = NsfwModelManager.isEnabled(this)
 
         tvModelName.text = NsfwModelManager.getActiveModelName(this)
 
-        tvModelStatus.text = when {
-            !hasModel  -> "❌ কোনো model নেই"
-            isLoaded   -> "✅ Model loaded — scanning ready"
-            else       -> "⚠️ Model আছে কিন্তু load হয়নি"
+        when {
+            !hasModel -> {
+                tvModelStatus.text = "❌ কোনো model নেই — import করো"
+                tvModelStatus.setTextColor(0xFFFF5252.toInt())
+            }
+            isLoaded -> {
+                tvModelStatus.text = "✅ Model ready — scanning চলছে"
+                tvModelStatus.setTextColor(0xFF4CAF50.toInt())
+            }
+            else -> {
+                tvModelStatus.text = "⚠️ Model আছে কিন্তু load হয়নি"
+                tvModelStatus.setTextColor(0xFFFF9800.toInt())
+            }
         }
-        tvModelStatus.setTextColor(when {
-            !hasModel -> 0xFFFF5252.toInt()
-            isLoaded  -> 0xFF4CAF50.toInt()
-            else      -> 0xFFFF9800.toInt()
-        })
 
-        tvModelInfo.text = if (hasModel) {
+        if (hasModel) {
             val type = NsfwModelManager.getModelType(this)
             val size = NsfwModelManager.getInputSize(this)
             val typeLabel = when (type) {
                 NsfwModelManager.TYPE_5CLASS -> "5-class (drawings/hentai/neutral/porn/sexy)"
                 NsfwModelManager.TYPE_2CLASS -> "2-class (sfw/nsfw)"
-                else                         -> "Custom"
+                else -> "Custom"
             }
-            "Type: $typeLabel\nInput size: ${size}×${size}"
+            tvModelInfo.text = "Type: $typeLabel\nInput: ${size}×${size}px"
         } else {
-            "Model import করো বা নিচের link থেকে ডাউনলোড করো"
+            tvModelInfo.text = "নিচের guide দেখো"
         }
 
-        switchAiScan.isChecked = NsfwModelManager.isEnabled(this)
-        btnRemove.visibility   = if (NsfwModelManager.getCustomModelPath(this) != null)
-            View.VISIBLE else View.GONE
-        btnTestScan.visibility = if (isLoaded) View.VISIBLE else View.GONE
+        // Switch — listener সরিয়ে set করি, তারপর আবার লাগাই
+        switchAiScan.setOnCheckedChangeListener(null)
+        switchAiScan.isChecked = isEnabled
+        switchAiScan.setOnCheckedChangeListener { _, checked -> onAiScanToggle(checked) }
 
-        // Spinner
+        btnRemove.visibility = if (NsfwModelManager.hasCustomModel(this)) View.VISIBLE else View.GONE
+        btnTest.visibility   = if (isLoaded) View.VISIBLE else View.GONE
+
         val typeIdx = when (NsfwModelManager.getModelType(this)) {
             NsfwModelManager.TYPE_5CLASS -> 0
             NsfwModelManager.TYPE_2CLASS -> 1
             else -> 2
         }
-        spinnerType.setSelection(typeIdx)
+        (spinnerType as? Spinner)?.setSelection(typeIdx)
 
-        // Threshold
         val thresh = NsfwModelManager.getThreshold(this)
         seekThreshold.progress = (thresh * 100).toInt()
-        tvThreshold.text       = "%.0f%%".format(thresh * 100)
+        tvThreshold.text = "%.0f%%".format(thresh * 100)
     }
 
-    // ── Spinner (model type) ──────────────────────────────────────────────────
+    private fun showLoading(msg: String) {
+        progressBar.visibility = View.VISIBLE
+        tvProgress.text = msg
+        tvProgress.visibility = View.VISIBLE
+        btnImport.isEnabled = false
+    }
+
+    private fun hideLoading() {
+        progressBar.visibility = View.GONE
+        tvProgress.visibility = View.GONE
+        btnImport.isEnabled = true
+    }
+
+    // ── Spinner ───────────────────────────────────────────────────────────────
 
     private fun setupSpinner() {
         val options = arrayOf(
@@ -140,22 +158,29 @@ class ModelSettingsActivity : AppCompatActivity() {
                     1 -> NsfwModelManager.TYPE_2CLASS
                     else -> NsfwModelManager.TYPE_CUSTOM
                 }
-                NsfwModelManager.setModelType(this@ModelSettingsActivity, type)
-                NsfwModelManager.unloadModel()
+                if (type != NsfwModelManager.getModelType(this@ModelSettingsActivity)) {
+                    NsfwModelManager.setModelType(this@ModelSettingsActivity, type)
+                    NsfwModelManager.unloadModel()
+                    toast("Model type পরিবর্তন হয়েছে। Reload হবে।")
+                    reloadModelInBackground()
+                }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
     }
 
-    // ── Threshold Seek Bar ────────────────────────────────────────────────────
+    // ── Threshold ─────────────────────────────────────────────────────────────
 
     private fun setupThreshold() {
         seekThreshold.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                val thresh = progress / 100f
-                tvThreshold.text = "%.0f%%".format(progress.toFloat())
-                if (fromUser) NsfwModelManager.setThreshold(
-                    this@ModelSettingsActivity, thresh.coerceIn(0.1f, 1.0f))
+                tvThreshold.text = "$progress%"
+                if (fromUser) {
+                    NsfwModelManager.setThreshold(
+                        this@ModelSettingsActivity,
+                        (progress / 100f).coerceIn(0.1f, 1.0f)
+                    )
+                }
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
@@ -167,26 +192,6 @@ class ModelSettingsActivity : AppCompatActivity() {
     private fun setupButtons() {
         btnBack.setOnClickListener { finish() }
 
-        switchAiScan.setOnCheckedChangeListener { _, checked ->
-            NsfwModelManager.setEnabled(this, checked)
-            if (checked && !NsfwModelManager.isModelLoaded()) {
-                if (!NsfwModelManager.loadModel(this)) {
-                    toast("⚠️ Model load হয়নি। আগে model import করো।")
-                    switchAiScan.isChecked = false
-                    NsfwModelManager.setEnabled(this, false)
-                } else {
-                    toast("✅ AI scan চালু হয়েছে")
-                    // KeywordService এ notify করো
-                    KeywordService.instance?.onNsfwModelChanged()
-                }
-            }
-            if (!checked) {
-                NsfwScanService.stop()
-                toast("AI scan বন্ধ হয়েছে")
-            }
-            refreshUI()
-        }
-
         btnImport.setOnClickListener {
             modelPicker.launch(Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "*/*"
@@ -197,87 +202,157 @@ class ModelSettingsActivity : AppCompatActivity() {
         btnRemove.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Model সরাবে?")
-                .setMessage("Custom model সরানো হবে। Asset model থাকলে সেটা use হবে।")
                 .setPositiveButton("হ্যাঁ") { _, _ ->
                     NsfwModelManager.removeCustomModel(this)
-                    toast("✅ Custom model সরানো হয়েছে")
+                    NsfwScanService.stop()
+                    toast("Custom model সরানো হয়েছে")
                     refreshUI()
                 }
                 .setNegativeButton("না", null).show()
         }
 
-        btnTestScan.setOnClickListener {
-            toast("Test: screenshot নেওয়া হচ্ছে...")
-            KeywordService.instance?.requestTestScan() ?: toast("⚠️ Service চালু নেই")
-        }
+        btnTest.setOnClickListener { runTestScan() }
 
-        btnDownloadInfo.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("📥 Model Download করবে কীভাবে?")
-                .setMessage(
-                    "Step 1: Browser এ যাও\n\n" +
-                    "Step 2: এই URL থেকে model ডাউনলোড করো:\n\n" +
-                    "🔗 5-class model (recommended):\n" +
-                    "github.com/rockyzhengwu/nsfw-resnet-tflite\n" +
-                    "→ nsfw_model.tflite ডাউনলোড করো\n\n" +
-                    "🔗 2-class model (smaller):\n" +
-                    "github.com/topics/nsfw-detection\n\n" +
-                    "Step 3: App এ ফিরে এসো\n" +
-                    "Step 4: 'Model Import করো' চাপো\n" +
-                    "Step 5: ডাউনলোড করা .tflite file select করো\n\n" +
-                    "⚠️ File এর extension অবশ্যই .tflite হতে হবে"
-                )
-                .setPositiveButton("বুঝেছি", null)
-                .show()
+        btnGuide.setOnClickListener { showDownloadGuide() }
+    }
+
+    // ── AI Scan Toggle ────────────────────────────────────────────────────────
+
+    private fun onAiScanToggle(enable: Boolean) {
+        if (enable) {
+            if (!NsfwModelManager.hasAnyModel(this)) {
+                toast("⚠️ আগে model import করো!")
+                switchAiScan.isChecked = false
+                return
+            }
+            NsfwModelManager.setEnabled(this, true)
+            reloadModelInBackground()
+        } else {
+            NsfwModelManager.setEnabled(this, false)
+            NsfwScanService.stop()
+            toast("AI scan বন্ধ হয়েছে")
         }
     }
 
     // ── Import ────────────────────────────────────────────────────────────────
 
-    private fun importModel(uri: Uri) {
-        toast("⏳ Model validate করা হচ্ছে...")
+    private fun importModelFromUri(uri: Uri) {
+        showLoading("⏳ Validating model...")
 
-        Thread {
+        bgExecutor.execute {
             val info = NsfwModelManager.validateModel(this, uri)
-            runOnUiThread {
+
+            mainHandler.post {
                 if (info == null) {
-                    toast("❌ Invalid model! .tflite file দাও।")
-                    return@runOnUiThread
+                    hideLoading()
+                    toast("❌ Invalid file! .tflite model দাও।")
+                    return@post
                 }
 
+                hideLoading()
+
                 val typeLabel = when (info.suggestedType) {
-                    NsfwModelManager.TYPE_5CLASS -> "5-class (recommended)"
+                    NsfwModelManager.TYPE_5CLASS -> "5-class ✅ (recommended)"
                     NsfwModelManager.TYPE_2CLASS -> "2-class"
                     else -> "Custom (${info.outputSize} outputs)"
                 }
 
                 AlertDialog.Builder(this)
-                    .setTitle("✅ Valid Model পাওয়া গেছে!")
+                    .setTitle("✅ Valid Model!")
                     .setMessage(
-                        "📊 Model Info:\n" +
-                        "• Input size: ${info.inputSize}×${info.inputSize}\n" +
-                        "• Output classes: ${info.outputSize}\n" +
-                        "• File size: ${"%.1f".format(info.fileSizeMb)} MB\n" +
-                        "• Suggested type: $typeLabel\n\n" +
+                        "Input: ${info.inputSize}×${info.inputSize}px\n" +
+                        "Output: ${info.outputSize} class\n" +
+                        "Size: ${"%.1f".format(info.fileSizeMb)} MB\n" +
+                        "Type: $typeLabel\n\n" +
                         "Import করবে?"
                     )
                     .setPositiveButton("Import করো") { _, _ ->
-                        val success = NsfwModelManager.importModelFromUri(
-                            this, uri, info.suggestedType)
-                        if (success) {
-                            NsfwModelManager.setInputSize(this, info.inputSize)
-                            NsfwModelManager.loadModel(this)
-                            KeywordService.instance?.onNsfwModelChanged()
-                            toast("✅ Model import হয়েছে!")
-                        } else {
-                            toast("❌ Import failed!")
-                        }
-                        refreshUI()
+                        doImport(uri, info)
                     }
                     .setNegativeButton("বাতিল", null)
                     .show()
             }
-        }.start()
+        }
+    }
+
+    private fun doImport(uri: Uri, info: NsfwModelManager.ModelInfo) {
+        showLoading("⏳ Importing model...")
+
+        bgExecutor.execute {
+            val ok = NsfwModelManager.importModel(
+                this, uri, info.suggestedType, info.inputSize)
+
+            if (ok) {
+                val loaded = NsfwModelManager.loadModel(this)
+                mainHandler.post {
+                    hideLoading()
+                    if (loaded) {
+                        toast("✅ Model imported ও loaded!")
+                        KeywordService.instance?.onNsfwModelChanged()
+                    } else {
+                        toast("⚠️ Imported কিন্তু load হয়নি। App restart করো।")
+                    }
+                    refreshUI()
+                }
+            } else {
+                mainHandler.post {
+                    hideLoading()
+                    toast("❌ Import failed!")
+                }
+            }
+        }
+    }
+
+    // ── Reload in background ──────────────────────────────────────────────────
+
+    private fun reloadModelInBackground() {
+        bgExecutor.execute {
+            val loaded = NsfwModelManager.loadModel(this)
+            mainHandler.post {
+                if (loaded) {
+                    KeywordService.instance?.onNsfwModelChanged()
+                    toast("✅ Model loaded!")
+                } else {
+                    toast("⚠️ Model load হয়নি")
+                }
+                refreshUI()
+            }
+        }
+    }
+
+    // ── Test Scan ─────────────────────────────────────────────────────────────
+
+    private fun runTestScan() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            toast("⚠️ Test scan requires Android 11+")
+            return
+        }
+        KeywordService.instance?.requestTestScan()
+            ?: toast("⚠️ Accessibility Service চালু নেই")
+    }
+
+    // ── Guide ─────────────────────────────────────────────────────────────────
+
+    private fun showDownloadGuide() {
+        AlertDialog.Builder(this)
+            .setTitle("📥 Model কোথায় পাবে?")
+            .setMessage(
+                "✅ Option 1 — GantMan MobileNetV2 (5-class):\n" +
+                "github.com/GantMan/nsfw_model\n" +
+                "→ Releases → mobilenet_v2_140_224.tflite\n" +
+                "→ Rename করো: nsfw_model.tflite\n\n" +
+                "✅ Option 2 — Yahoo Open NSFW (2-class):\n" +
+                "github.com/mdietrichstein/tensorflow-open_nsfw\n" +
+                "→ tflite export script run করো\n\n" +
+                "📲 Import steps:\n" +
+                "1. Phone এ .tflite file download করো\n" +
+                "2. 'Model Import করো' বাটন চাপো\n" +
+                "3. File Manager থেকে file select করো\n" +
+                "4. App auto-detect করবে 2-class না 5-class\n\n" +
+                "⚠️ File extension .tflite হতে হবে"
+            )
+            .setPositiveButton("বুঝেছি", null)
+            .show()
     }
 
     private fun toast(msg: String) =

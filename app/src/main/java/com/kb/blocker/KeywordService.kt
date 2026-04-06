@@ -434,7 +434,7 @@ fun KeywordService.requestTestScan() {
 
                     Thread {
                         val (isAdult, conf) = NsfwModelManager.scan(this@requestTestScan, bitmap)
-                        val detailed = NsfwModelManager.scanDetailed(bitmap)
+                        val detailed = NsfwModelManager.scanDetailed(this@requestTestScan, bitmap)
                         bitmap.recycle()
 
                         android.os.Handler(android.os.Looper.getMainLooper()).post {

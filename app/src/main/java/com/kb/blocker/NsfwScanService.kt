@@ -2,136 +2,126 @@ package com.kb.blocker
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.media.Image
-import android.media.ImageReader
-import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.DisplayMetrics
+import android.util.Log
+import java.util.concurrent.Executors
 
-/**
- * NSFW AI Scanner
- *
- * AccessibilityService এর takeScreenshot() ব্যবহার করে
- * (Android 11+ / API 30+)
- *
- * প্রতি SCAN_INTERVAL_MS তে একবার screenshot নিয়ে
- * NsfwModelManager দিয়ে scan করে।
- *
- * Adult content detect হলে KeywordService কে জানায়।
- */
 object NsfwScanService {
 
-    private const val SCAN_INTERVAL_MS = 3_000L   // প্রতি ৩ সেকেন্ডে scan
-    private const val SCAN_COOLDOWN_MS = 5_000L   // block এর পরে ৫ সেকেন্ড rest
+    private const val TAG              = "NsfwScanService"
+    private const val SCAN_INTERVAL_MS = 4_000L
+    private const val SCAN_COOLDOWN_MS = 6_000L
+    private const val MIN_SCAN_GAP_MS  = 3_000L
 
-    private val handler      = Handler(Looper.getMainLooper())
-    private var isRunning    = false
-    private var lastScanTime = 0L
-    private var lastBlockTime = 0L
+    private val mainHandler  = Handler(Looper.getMainLooper())
+    private val bgExecutor   = Executors.newSingleThreadExecutor()
 
-    // ── Start / Stop ──────────────────────────────────────────────────────────
+    @Volatile private var isRunning    = false
+    @Volatile private var lastScanTime = 0L
+    @Volatile private var lastBlockTime = 0L
 
     fun start(service: AccessibilityService) {
-        if (isRunning) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-
+        if (isRunning) return
         isRunning = true
+        Log.d(TAG, "NsfwScanService started")
         scheduleScan(service)
     }
 
     fun stop() {
         isRunning = false
-        handler.removeCallbacksAndMessages(null)
+        mainHandler.removeCallbacksAndMessages(null)
+        Log.d(TAG, "NsfwScanService stopped")
     }
 
-    // ── Scan loop ─────────────────────────────────────────────────────────────
-
     private fun scheduleScan(service: AccessibilityService) {
-        handler.postDelayed({
+        mainHandler.postDelayed({
             if (!isRunning) return@postDelayed
-            doScan(service)
+            tryTakeScreenshot(service)
             scheduleScan(service)
         }, SCAN_INTERVAL_MS)
     }
 
-    @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
-    private fun doScan(service: AccessibilityService) {
+    private fun tryTakeScreenshot(service: AccessibilityService) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
         val ctx = service.applicationContext
 
         // Feature enabled?
         if (!NsfwModelManager.isEnabled(ctx)) return
+
+        // Model loaded? Background thread এ load করো
         if (!NsfwModelManager.isModelLoaded()) {
-            NsfwModelManager.loadModel(ctx)
-            if (!NsfwModelManager.isModelLoaded()) return
+            bgExecutor.execute {
+                NsfwModelManager.loadModel(ctx)
+            }
+            return
         }
 
         val now = System.currentTimeMillis()
-        if (now - lastScanTime < SCAN_INTERVAL_MS) return
+        if (now - lastScanTime < MIN_SCAN_GAP_MS) return
         if (now - lastBlockTime < SCAN_COOLDOWN_MS) return
 
-        // Foreground pkg check
         val pkg = KeywordService.currentForegroundPkg
         if (pkg.isBlank() || pkg == ctx.packageName) return
         if (KeywordService.isWhitelisted(ctx, pkg)) return
 
         lastScanTime = now
 
-        // takeScreenshot — API 30+
         try {
             service.takeScreenshot(
                 android.view.Display.DEFAULT_DISPLAY,
-                ctx.mainExecutor,
+                bgExecutor,  // ← bg executor এ callback — main thread block হবে না
                 object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
-                        processScreenshot(ctx, screenshot, service, pkg)
+                        processInBackground(ctx, screenshot, service, pkg)
                     }
-                    override fun onFailure(errorCode: Int) { /* ignore */ }
+                    override fun onFailure(errorCode: Int) {
+                        Log.d(TAG, "Screenshot failed: $errorCode")
+                    }
                 }
             )
-        } catch (_: Exception) { }
+        } catch (e: Exception) {
+            Log.e(TAG, "takeScreenshot error: ${e.message}")
+        }
     }
 
-    private fun processScreenshot(
+    private fun processInBackground(
         ctx: android.content.Context,
         screenshot: AccessibilityService.ScreenshotResult,
         service: AccessibilityService,
         pkg: String
     ) {
+        var bitmap: Bitmap? = null
         try {
             val hwBuffer = screenshot.hardwareBuffer ?: return
-            val bitmap   = Bitmap.wrapHardwareBuffer(hwBuffer, null)
+            bitmap = Bitmap.wrapHardwareBuffer(hwBuffer, null)
                 ?.copy(Bitmap.Config.ARGB_8888, false)
             hwBuffer.close()
             bitmap ?: return
 
-            // Background thread এ inference চালাও
-            Thread {
-                try {
-                    val (isAdult, confidence) = NsfwModelManager.scan(ctx, bitmap)
-                    bitmap.recycle()
+            val (isAdult, confidence) = NsfwModelManager.scan(ctx, bitmap)
 
-                    if (isAdult) {
-                        handler.post {
-                            val now = System.currentTimeMillis()
-                            // Double check — ইতিমধ্যে block হয়নি তো?
-                            if (now - lastBlockTime > SCAN_COOLDOWN_MS) {
-                                lastBlockTime = now
-                                val conf = "%.0f".format(confidence * 100)
-                                KeywordService.instance?.triggerBlockPublic(
-                                    pkg, "🤖 AI detected adult image ($conf%)"
-                                )
-                            }
-                        }
+            if (isAdult) {
+                val now = System.currentTimeMillis()
+                if (now - lastBlockTime > SCAN_COOLDOWN_MS) {
+                    lastBlockTime = now
+                    val conf = "%.0f".format(confidence * 100)
+                    Log.d(TAG, "Adult detected in $pkg: $conf%")
+
+                    mainHandler.post {
+                        KeywordService.instance?.triggerBlock(
+                            pkg, "🤖 AI: Adult image detected ($conf%)"
+                        )
                     }
-                } catch (_: Exception) {
-                    bitmap.recycle()
                 }
-            }.start()
-
-        } catch (_: Exception) { }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Process error: ${e.message}")
+        } finally {
+            try { bitmap?.recycle() } catch (_: Exception) {}
+        }
     }
 }
