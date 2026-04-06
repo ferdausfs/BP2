@@ -127,19 +127,21 @@ object NsfwModelManager {
 
     // ── Asset → Cache copy ────────────────────────────────────────────────────
 
-    private fun copyAssetToCache(ctx: Context): File? = try {
-        val dest = File(ctx.cacheDir, MODEL_FILE)
-        // Already copied এবং fresh? Skip
-        if (dest.exists() && dest.length() > 1024) return dest
+    private fun copyAssetToCache(ctx: Context): File? {
+        return try {
+            val dest = File(ctx.cacheDir, MODEL_FILE)
+            // Already copied এবং fresh? Skip
+            if (dest.exists() && dest.length() > 1024) return dest
 
-        ctx.assets.open(MODEL_FILE).use { input ->
-            FileOutputStream(dest).use { output -> input.copyTo(output) }
+            ctx.assets.open(MODEL_FILE).use { input ->
+                FileOutputStream(dest).use { output -> input.copyTo(output) }
+            }
+            Log.d(TAG, "Asset copied to cache: ${dest.length()/1024}KB")
+            dest
+        } catch (e: Exception) {
+            Log.e(TAG, "Asset copy failed: ${e.message}")
+            null
         }
-        Log.d(TAG, "Asset copied to cache: ${dest.length()/1024}KB")
-        dest
-    } catch (e: Exception) {
-        Log.e(TAG, "Asset copy failed: ${e.message}")
-        null
     }
 
     // ── File → MappedByteBuffer ───────────────────────────────────────────────
