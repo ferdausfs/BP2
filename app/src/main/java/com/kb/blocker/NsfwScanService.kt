@@ -11,8 +11,8 @@ import java.util.concurrent.Executors
 object NsfwScanService {
 
     private const val TAG              = "NsfwScanService"
-    private const val SCAN_INTERVAL_MS = 4_000L
-    private const val SCAN_COOLDOWN_MS = 6_000L
+    private const val SCAN_INTERVAL_MS = 500L
+    private const val SCAN_COOLDOWN_MS = 2_000L
 
     // ★ Main thread handler — takeScreenshot MUST run on main thread ★
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -63,6 +63,11 @@ object NsfwScanService {
 
         val pkg = KeywordService.currentForegroundPkg
         if (pkg.isBlank() || pkg == ctx.packageName) return
+
+        // FEATURE 2: শুধু browser ও video app এ scan করো — CPU save
+        val isScanTarget = KeywordService.BROWSER_PACKAGES.any { pkg.contains(it) } ||
+                           KeywordService.VIDEO_PACKAGES.any  { pkg.contains(it) }
+        if (!isScanTarget) return
 
         // Whitelist check — KeywordService এর in-memory cache use করো
         val svc = KeywordService.instance

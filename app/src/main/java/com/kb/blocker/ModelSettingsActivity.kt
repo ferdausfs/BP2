@@ -122,9 +122,10 @@ class ModelSettingsActivity : AppCompatActivity() {
         }
         (spinnerType as? Spinner)?.setSelection(typeIdx)
 
-        val thresh = NsfwModelManager.getThreshold(this)
-        seekThreshold.progress = (thresh * 100).toInt()
-        tvThreshold.text = "%.0f%%".format(thresh * 100)
+        val thresh    = NsfwModelManager.getThreshold(this)
+        val threshPct = (thresh * 100).toInt().coerceIn(10, 150)
+        seekThreshold.progress = (threshPct - 10).coerceAtLeast(0)
+        tvThreshold.text = "$threshPct%"
     }
 
     private fun showLoading(msg: String) {
@@ -174,11 +175,12 @@ class ModelSettingsActivity : AppCompatActivity() {
     private fun setupThreshold() {
         seekThreshold.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvThreshold.text = "$progress%"
+                val actual = (progress + 10).coerceAtLeast(10)  // min 10%
+                tvThreshold.text = "$actual%"
                 if (fromUser) {
                     NsfwModelManager.setThreshold(
                         this@ModelSettingsActivity,
-                        (progress / 100f).coerceIn(0.1f, 1.0f)
+                        actual / 100f
                     )
                 }
             }

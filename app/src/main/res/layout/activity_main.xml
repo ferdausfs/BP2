@@ -158,9 +158,12 @@
                 <TextView style="@style/RowSub" android:text="Browser/video app দিনে কতক্ষণ চলবে"/>
             </LinearLayout>
             <Button android:id="@+id/btnUsageLimits" android:layout_width="wrap_content"
-                android:layout_height="30dp" android:text="Set করো"
+                android:layout_height="30dp" android:text="Set"
                 android:backgroundTint="#1B5E20" android:textColor="#FFF"
-                android:textSize="10sp" android:paddingHorizontal="10dp"/>
+                android:textSize="10sp" android:paddingHorizontal="8dp"
+                android:layout_marginEnd="6dp"/>
+            <Switch android:id="@+id/switchUsageLimit"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
 
         <!-- Stats + Panic -->

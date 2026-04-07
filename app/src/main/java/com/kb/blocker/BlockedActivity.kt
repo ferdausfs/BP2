@@ -58,8 +58,8 @@ class BlockedActivity : Activity() {
         val countRunnable = object : Runnable {
             override fun run() {
                 tvCountdown.text = "${countdown}s এ বন্ধ হবে..."
-                if (countdown-- > 0) handler.postDelayed(this, 1000)
-                else finish()
+                if (--countdown > 0) handler.postDelayed(this, 1000)
+                else handler.postDelayed({ finish() }, 1000)
             }
         }
         handler.post(countRunnable)

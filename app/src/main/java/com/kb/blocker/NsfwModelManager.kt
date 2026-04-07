@@ -26,7 +26,7 @@ object NsfwModelManager {
 
     private const val MODEL_FILE     = "nsfw_model.tflite"
     private const val DEFAULT_SIZE   = 224
-    private const val DEFAULT_THRESH = 0.65f
+    private const val DEFAULT_THRESH = 0.60f
 
     const val TYPE_5CLASS = "5class"
     const val TYPE_2CLASS = "2class"
@@ -269,11 +269,11 @@ object NsfwModelManager {
             when (getModelType(ctx)) {
                 TYPE_5CLASS -> {
                     // [0]drawings [1]hentai [2]neutral [3]porn [4]sexy
-                    val adultScore = maxOf(
-                        probs.getOrElse(1) { 0f },  // hentai
-                        probs.getOrElse(3) { 0f },  // porn
-                        probs.getOrElse(4) { 0f }   // sexy
-                    )
+                    // SUM mode: hentai+porn+sexy যোগ করো
+                    // একটা কম হলেও combination এ ধরা পড়বে
+                    val adultScore = probs.getOrElse(1) { 0f } +  // hentai
+                                     probs.getOrElse(3) { 0f } +  // porn
+                                     probs.getOrElse(4) { 0f }    // sexy
                     Pair(adultScore >= threshold, adultScore)
                 }
                 TYPE_2CLASS -> {

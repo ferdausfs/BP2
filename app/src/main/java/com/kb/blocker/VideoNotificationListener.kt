@@ -42,11 +42,11 @@ class VideoNotificationListener : NotificationListenerService() {
 
         // Adult check
         if (VideoMetaDetector.isAdultMeta(combined)) {
-            // Service কে জানাও block করতে
             KeywordService.instance?.let { svc ->
                 val handler = android.os.Handler(android.os.Looper.getMainLooper())
                 handler.post {
-                    svc.closeAndKillPkg(pkg)
+                    // BUG 4 fix: BlockedActivity দেখাও
+                    svc.triggerBlock(pkg, "📱 Adult notification detected")
                 }
             }
         }

@@ -54,12 +54,13 @@ class BootReceiver : BroadcastReceiver() {
                 android.app.PendingIntent.FLAG_IMMUTABLE
             )
 
-            val notif = android.app.Notification.Builder(ctx, "boot_reminder")
+            val notif = androidx.core.app.NotificationCompat.Builder(ctx, "boot_reminder")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setContentTitle("⚠️ Content Blocker")
                 .setContentText("Accessibility Service বন্ধ। চালু করতে tap করো।")
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                 .build()
 
             nm.notify(1001, notif)
