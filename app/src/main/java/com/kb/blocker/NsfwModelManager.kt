@@ -146,13 +146,18 @@ object NsfwModelManager {
 
     // ── File → MappedByteBuffer ───────────────────────────────────────────────
 
-    private fun loadMappedBuffer(file: File): MappedByteBuffer? = try {
-        FileInputStream(file).use { fis ->
+    private fun loadMappedBuffer(file: File): MappedByteBuffer? {
+        // ★ FileInputStream কে close করা যাবে না —
+        //   channel close হলে MappedByteBuffer invalid হয় → crash
+        //   তাই fis টা intentionally open রাখি, GC করবে
+        return try {
+            @Suppress("UNCHECKED_CAST")
+            val fis = FileInputStream(file)
             fis.channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
+        } catch (e: Exception) {
+            Log.e(TAG, "Buffer load failed: ${e.message}")
+            null
         }
-    } catch (e: Exception) {
-        Log.e(TAG, "Buffer load failed: ${e.message}")
-        null
     }
 
     // ── Import ────────────────────────────────────────────────────────────────
@@ -212,8 +217,11 @@ object NsfwModelManager {
 
             // Load করে shape দেখো
             val buffer  = loadMappedBuffer(tmpFile) ?: return null
-            val options = Interpreter.Options().apply { numThreads = 1; useNNAPI = false }
-            val interp  = Interpreter(buffer, options)
+            val options = Interpreter.Options().apply {
+                numThreads = 1
+                useNNAPI   = false
+            }
+            val interp = Interpreter(buffer, options)
 
             val inShape  = interp.getInputTensor(0).shape()
             val outShape = interp.getOutputTensor(0).shape()
@@ -248,15 +256,19 @@ object NsfwModelManager {
      */
     fun scan(ctx: Context, bitmap: Bitmap): Pair<Boolean, Float> {
         val interp = synchronized(lock) { interpreter } ?: return Pair(false, 0f)
+        if (bitmap.isRecycled) return Pair(false, 0f)
 
         return try {
-            val size      = getInputSize(ctx)
-            val resized   = Bitmap.createScaledBitmap(bitmap, size, size, true)
-            val inputBuf  = bitmapToByteBuffer(resized, size)
-            resized.recycle()
+            val size    = getInputSize(ctx)
+            // ★ false = original bitmap কে recycle করবে না
+            val resized = Bitmap.createScaledBitmap(bitmap, size, size, false)
 
-            val outSize   = getOutputSize(interp)
-            val output    = Array(1) { FloatArray(outSize) }
+            // ByteBuffer এ সম্পূর্ণ data copy হয়ে যাবে — তারপর resized recycle safe
+            val inputBuf = bitmapToByteBuffer(resized, size)
+            if (resized !== bitmap) resized.recycle()  // original হলে recycle করব না
+
+            val outSize = getOutputSize(interp)
+            val output  = Array(1) { FloatArray(outSize) }
 
             synchronized(lock) {
                 if (interpreter == null) return Pair(false, 0f)
@@ -296,11 +308,12 @@ object NsfwModelManager {
     /** Detailed result — debug/test এর জন্য */
     fun scanDetailed(ctx: Context, bitmap: Bitmap): Map<String, Float>? {
         val interp = synchronized(lock) { interpreter } ?: return null
+        if (bitmap.isRecycled) return null
         return try {
             val size     = getInputSize(ctx)
-            val resized  = Bitmap.createScaledBitmap(bitmap, size, size, true)
+            val resized  = Bitmap.createScaledBitmap(bitmap, size, size, false)
             val inputBuf = bitmapToByteBuffer(resized, size)
-            resized.recycle()
+            if (resized !== bitmap) resized.recycle()
 
             val outSize  = getOutputSize(interp)
             val output   = Array(1) { FloatArray(outSize) }

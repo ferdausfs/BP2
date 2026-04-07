@@ -6,134 +6,168 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * AI Screenshot Scanner
+ *
+ * ★ Crash-free design:
+ * - একটাই scan চলবে একসাথে (AtomicBoolean lock)
+ * - inference শেষ হওয়ার আগে নতুন scan শুরু হবে না
+ * - সব bitmap সঠিকভাবে recycle হবে
+ * - takeScreenshot main thread এ, inference bg thread এ
+ */
 object NsfwScanService {
 
-    private const val TAG              = "NsfwScanService"
-    private const val SCAN_INTERVAL_MS = 500L
-    private const val SCAN_COOLDOWN_MS = 2_000L
+    private const val TAG = "NsfwScan"
 
-    // ★ Main thread handler — takeScreenshot MUST run on main thread ★
+    // Scan interval — inference চলাকালীন skip হবে
+    private const val SCHEDULE_MS   = 1_500L  // loop repeat
+    private const val COOLDOWN_MS   = 3_000L  // block এর পরে rest
+
     private val mainHandler = Handler(Looper.getMainLooper())
-    // Background thread — inference (heavy) এখানে
-    private val bgExecutor  = Executors.newSingleThreadExecutor()
 
-    @Volatile private var isRunning     = false
-    @Volatile private var lastScanTime  = 0L
-    @Volatile private var lastBlockTime = 0L
+    @Volatile private var isRunning      = false
+    @Volatile private var lastBlockTime  = 0L
+
+    // ★ এই lock দিয়ে একসাথে একটাই scan চলবে
+    private val scanInProgress = AtomicBoolean(false)
+
+    // ── Start / Stop ───────────────────────────────────────────────────────────
 
     fun start(service: AccessibilityService) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         if (isRunning) return
         isRunning = true
+        scanInProgress.set(false)
         Log.d(TAG, "Started")
-        scheduleNext(service)
+        scheduleLoop(service)
     }
 
     fun stop() {
         isRunning = false
+        scanInProgress.set(false)
         mainHandler.removeCallbacksAndMessages(null)
         Log.d(TAG, "Stopped")
     }
 
-    // ── Scan loop — main thread এ ─────────────────────────────────────────────
+    // ── Main loop — main thread এ চলে ─────────────────────────────────────────
 
-    private fun scheduleNext(service: AccessibilityService) {
+    private fun scheduleLoop(service: AccessibilityService) {
         mainHandler.postDelayed({
             if (!isRunning) return@postDelayed
-            doScanOnMainThread(service)
-            scheduleNext(service)
-        }, SCAN_INTERVAL_MS)
+            maybeCapture(service)
+            scheduleLoop(service)
+        }, SCHEDULE_MS)
     }
 
-    /**
-     * takeScreenshot — MUST be called from main thread
-     */
-    private fun doScanOnMainThread(service: AccessibilityService) {
+    private fun maybeCapture(service: AccessibilityService) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-        val ctx = service.applicationContext
 
-        if (!NsfwModelManager.isEnabled(ctx)) return
-        if (!NsfwModelManager.isModelLoaded()) return
-
-        val now = System.currentTimeMillis()
-        if (now - lastScanTime  < SCAN_INTERVAL_MS) return
-        if (now - lastBlockTime < SCAN_COOLDOWN_MS) return
-
-        val pkg = KeywordService.currentForegroundPkg
-        if (pkg.isBlank() || pkg == ctx.packageName) return
-
-        // FEATURE 2: শুধু browser ও video app এ scan করো — CPU save
-        val isScanTarget = KeywordService.BROWSER_PACKAGES.any { pkg.contains(it) } ||
-                           KeywordService.VIDEO_PACKAGES.any  { pkg.contains(it) }
-        if (!isScanTarget) return
-
-        // Whitelist check — KeywordService এর in-memory cache use করো
-        val svc = KeywordService.instance
-        if (svc != null) {
-            svc.refreshWhitelistCache()
-            if (svc.whitelistCache.contains(pkg)) return
-        } else {
-            if (KeywordService.loadWhitelistSet(ctx).contains(pkg)) return
+        // ★ আগের scan শেষ না হলে এই round skip
+        if (!scanInProgress.compareAndSet(false, true)) {
+            Log.d(TAG, "Previous scan still running — skip")
+            return
         }
 
-        lastScanTime = now
+        val ctx = service.applicationContext
 
+        if (!NsfwModelManager.isEnabled(ctx) || !NsfwModelManager.isModelLoaded()) {
+            scanInProgress.set(false)
+            return
+        }
+
+        if (System.currentTimeMillis() - lastBlockTime < COOLDOWN_MS) {
+            scanInProgress.set(false)
+            return
+        }
+
+        val pkg = KeywordService.currentForegroundPkg
+        if (pkg.isBlank() || pkg == ctx.packageName) {
+            scanInProgress.set(false)
+            return
+        }
+
+        // শুধু browser + video app
+        val isTarget = KeywordService.BROWSER_PACKAGES.any { pkg.contains(it) } ||
+                       KeywordService.VIDEO_PACKAGES.any  { pkg.contains(it) }
+        if (!isTarget) { scanInProgress.set(false); return }
+
+        // Whitelist
+        val svc = KeywordService.instance
+        val whitelist = svc?.whitelistCache ?: KeywordService.loadWhitelistSet(ctx)
+        if (whitelist.contains(pkg)) { scanInProgress.set(false); return }
+
+        // ★ takeScreenshot — main thread এ call করা হচ্ছে ✓
         try {
-            // takeScreenshot callback executor = bgExecutor
-            // কিন্তু takeScreenshot নিজে main thread এ call হচ্ছে ✓
             service.takeScreenshot(
                 android.view.Display.DEFAULT_DISPLAY,
-                bgExecutor,
+                // callback executor — bg thread এ process করব
+                java.util.concurrent.Executors.newSingleThreadExecutor(),
                 object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(shot: AccessibilityService.ScreenshotResult) {
-                        processShot(ctx, shot, pkg)
+                        // bg thread এ inference
+                        runInference(ctx, shot, pkg)
                     }
                     override fun onFailure(code: Int) {
                         Log.d(TAG, "Screenshot fail: $code")
+                        scanInProgress.set(false)  // ★ lock release
                     }
                 }
             )
         } catch (e: Exception) {
             Log.e(TAG, "takeScreenshot error: ${e.message}")
+            scanInProgress.set(false)  // ★ lock release
         }
     }
 
-    // ── Process — bg thread ───────────────────────────────────────────────────
+    // ── Inference — bg thread এ ────────────────────────────────────────────────
 
-    private fun processShot(
+    private fun runInference(
         ctx: android.content.Context,
         shot: AccessibilityService.ScreenshotResult,
         pkg: String
     ) {
-        var bitmap: Bitmap? = null
+        var softBitmap: Bitmap? = null
         try {
-            val hw = shot.hardwareBuffer ?: return
-            bitmap = Bitmap.wrapHardwareBuffer(hw, null)
-                ?.copy(Bitmap.Config.ARGB_8888, false)
-            hw.close()
-            bitmap ?: return
+            // HardwareBuffer → software bitmap
+            val hw = shot.hardwareBuffer
+            if (hw == null) { scanInProgress.set(false); return }
 
-            val (isAdult, conf) = NsfwModelManager.scan(ctx, bitmap)
+            val hardBitmap = Bitmap.wrapHardwareBuffer(hw, null)
+            hw.close()
+
+            if (hardBitmap == null) { scanInProgress.set(false); return }
+
+            // Hardware bitmap → software (inference এর জন্য software লাগে)
+            softBitmap = hardBitmap.copy(Bitmap.Config.ARGB_8888, false)
+            hardBitmap.recycle()  // hard bitmap আর দরকার নেই
+
+            if (softBitmap == null) { scanInProgress.set(false); return }
+
+            // ★ scan — NsfwModelManager নিজেই resize করে
+            val (isAdult, confidence) = NsfwModelManager.scan(ctx, softBitmap)
 
             if (isAdult) {
                 val now = System.currentTimeMillis()
-                if (now - lastBlockTime > SCAN_COOLDOWN_MS) {
+                if (now - lastBlockTime > COOLDOWN_MS) {
                     lastBlockTime = now
-                    val pct = "%.0f".format(conf * 100)
-                    Log.d(TAG, "Adult in $pkg: $pct%")
+                    val pct = "%.0f".format(confidence * 100)
+                    Log.d(TAG, "Adult detected in $pkg ($pct%)")
                     mainHandler.post {
                         KeywordService.instance?.triggerBlock(
-                            pkg, "🤖 AI: Adult image ($pct%)"
+                            pkg, "🤖 AI: Adult image detected ($pct%)"
                         )
                     }
                 }
             }
+
         } catch (e: Exception) {
-            Log.e(TAG, "Process error: ${e.message}")
+            Log.e(TAG, "Inference error: ${e.message}")
         } finally {
-            try { bitmap?.recycle() } catch (_: Exception) {}
+            // ★ সবসময় bitmap recycle ও lock release
+            try { softBitmap?.recycle() } catch (_: Exception) {}
+            scanInProgress.set(false)
         }
     }
 }

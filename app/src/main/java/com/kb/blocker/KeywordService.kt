@@ -455,7 +455,8 @@ fun KeywordService.requestTestScan() {
                                 hw.close()
                                 bmp ?: return@Thread
                                 val (isAdult, conf) = NsfwModelManager.scan(svc, bmp)
-                                val detailed        = NsfwModelManager.scanDetailed(svc, bmp)
+                                // scanDetailed এ recycled bitmap দেওয়া safe — আমরা false দিয়ে scale করেছি
+                                val detailed = if (!bmp.isRecycled) NsfwModelManager.scanDetailed(svc, bmp) else null
                                 Handler(Looper.getMainLooper()).post {
                                     val thresh = NsfwModelManager.getThreshold(svc)
                                     val msg = buildString {
