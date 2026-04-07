@@ -64,8 +64,14 @@ object NsfwScanService {
         val pkg = KeywordService.currentForegroundPkg
         if (pkg.isBlank() || pkg == ctx.packageName) return
 
-        // Whitelist check — foreground app
-        if (KeywordService.loadWhitelistSet(ctx).contains(pkg)) return
+        // Whitelist check — KeywordService এর in-memory cache use করো
+        val svc = KeywordService.instance
+        if (svc != null) {
+            svc.refreshWhitelistCache()
+            if (svc.whitelistCache.contains(pkg)) return
+        } else {
+            if (KeywordService.loadWhitelistSet(ctx).contains(pkg)) return
+        }
 
         lastScanTime = now
 

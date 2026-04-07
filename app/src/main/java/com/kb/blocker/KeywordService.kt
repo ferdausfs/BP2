@@ -20,7 +20,7 @@ class KeywordService : AccessibilityService() {
     private var lastBlockTime = 0L
 
     // ── Whitelist cache ────────────────────────────────────────────────────────
-    private var whitelistCache    : Set<String> = emptySet()
+    internal var whitelistCache    : Set<String> = emptySet()
     internal var whitelistCacheTime = 0L
 
     // ── Usage tracking ─────────────────────────────────────────────────────────
@@ -69,24 +69,6 @@ class KeywordService : AccessibilityService() {
         }
     }
 
-    /**
-     * ★ CORE WHITELIST CHECK ★
-     * pkg: event এর package
-     * currentForegroundPkg: screen এ যে app দেখা যাচ্ছে
-     *
-     * যেকোনো একটা whitelisted হলে block করব না।
-     * এটা দিয়ে YouTube whitelisted থাকলে YouTube এর
-     * background system event এও block হবে না।
-     */
-    private fun shouldBlock(eventPkg: String): Boolean {
-        refreshWhitelistCache()
-        // foreground app whitelisted? → block করব না
-        if (whitelistCache.contains(currentForegroundPkg)) return false
-        // event sender whitelisted? → block করব না
-        if (whitelistCache.contains(eventPkg)) return false
-        return true
-    }
-
     // ── Accessibility Events ───────────────────────────────────────────────────
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -95,7 +77,7 @@ class KeywordService : AccessibilityService() {
         if (pkg == packageName) return
         if (!isEnabled(this)) return
 
-        // Foreground tracking
+        // ── Foreground tracking — সবার আগে update করো ──────────────────────
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             if (!isSystemPkg(pkg)) {
                 if (fgPkg != pkg) {
@@ -107,8 +89,13 @@ class KeywordService : AccessibilityService() {
             }
         }
 
-        // ★ WHITELIST — foreground app check সবার আগে ★
-        if (!shouldBlock(pkg)) return
+        // ★ WHITELIST ★
+        // currentForegroundPkg এখন updated — এরপর check করো
+        // foreground whitelisted হলে সব event এ return
+        refreshWhitelistCache()
+        if (whitelistCache.contains(currentForegroundPkg)) return
+        // event sender ও check করো (extra safety)
+        if (whitelistCache.contains(pkg)) return
 
         val now = System.currentTimeMillis()
         if (now - lastBlockTime < 1500L) return
