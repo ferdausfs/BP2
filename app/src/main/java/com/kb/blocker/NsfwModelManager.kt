@@ -146,13 +146,16 @@ object NsfwModelManager {
 
     // ── File → MappedByteBuffer ───────────────────────────────────────────────
 
+    /**
+     * File কে ByteBuffer এ load করো।
+     * MappedByteBuffer avoid করা হয়েছে — FileInputStream বন্ধ হলে crash হয়।
+     * পুরো file bytes পড়ে DirectByteBuffer এ রাখা হয় — safe।
+     */
     private fun loadMappedBuffer(file: File): MappedByteBuffer? {
-        // ★ FileInputStream কে close করা যাবে না —
-        //   channel close হলে MappedByteBuffer invalid হয় → crash
-        //   তাই fis টা intentionally open রাখি, GC করবে
         return try {
-            @Suppress("UNCHECKED_CAST")
+            // file bytes → MappedByteBuffer (FileInputStream open রাখতে হবে)
             val fis = FileInputStream(file)
+            // fis intentionally NOT closed — MappedByteBuffer requires open channel
             fis.channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
         } catch (e: Exception) {
             Log.e(TAG, "Buffer load failed: ${e.message}")

@@ -227,6 +227,11 @@ class ModelSettingsActivity : AppCompatActivity() {
                 switchAiScan.isChecked = false
                 return
             }
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+                toast("⚠️ AI scan এর জন্য Android 11+ দরকার")
+                switchAiScan.isChecked = false
+                return
+            }
             NsfwModelManager.setEnabled(this, true)
             reloadModelInBackground()
         } else {

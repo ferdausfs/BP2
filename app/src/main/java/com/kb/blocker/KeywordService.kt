@@ -43,14 +43,8 @@ class KeywordService : AccessibilityService() {
         refreshWhitelistCache()
         showServiceNotification()
 
-        if (NsfwModelManager.isEnabled(this)) {
-            bgPool.execute {
-                if (NsfwModelManager.loadModel(this)) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-                        handler.post { NsfwScanService.start(this) }
-                }
-            }
-        }
+        // AI scan — ModelSettingsActivity থেকে manually চালু করতে হবে
+        // Auto-start বন্ধ রাখা হয়েছে stability এর জন্য
     }
 
     override fun onInterrupt() {}
@@ -60,7 +54,6 @@ class KeywordService : AccessibilityService() {
         flushUsage()
         stopServiceNotification()
         NsfwScanService.stop()
-        NsfwModelManager.unloadModel()
         handler.removeCallbacksAndMessages(null)
         instance  = null
         isRunning = false
