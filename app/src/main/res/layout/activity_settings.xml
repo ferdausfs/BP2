@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#0A0A0A">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="16dp">
+
+        <!-- Header -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+            <Button android:id="@+id/btnSettingsBack"
+                android:layout_width="wrap_content" android:layout_height="36dp"
+                android:text="← Back" android:backgroundTint="#2A2A2A"
+                android:textColor="#CCC" android:textSize="12sp" android:paddingHorizontal="12dp"/>
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="⚙️ Advanced Settings"
+                android:textColor="#FFFFFF" android:textSize="18sp"
+                android:textStyle="bold" android:gravity="center"/>
+        </LinearLayout>
+
+        <!-- ══ SECURITY ══ -->
+        <TextView style="@style/SectionLabel" android:text="  🔐 SECURITY"/>
+
+        <!-- Safe Search -->
+        <LinearLayout style="@style/RowCard" android:layout_marginBottom="1dp">
+            <LinearLayout style="@style/RowText">
+                <TextView style="@style/RowTitle" android:text="🔍 Safe Search Enforce"/>
+                <TextView style="@style/RowSub" android:text="Google, Bing এ safe=active force করে"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Unsafe search URL detect হলে block করবে"
+                    android:textColor="#1B5E20" android:textSize="10sp" android:layout_marginTop="2dp"/>
+            </LinearLayout>
+            <Switch android:id="@+id/switchSafeSearch"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <!-- VPN Block -->
+        <LinearLayout style="@style/RowCard" android:layout_marginBottom="1dp">
+            <LinearLayout style="@style/RowText">
+                <TextView style="@style/RowTitle" android:text="🔒 VPN Block"/>
+                <TextView style="@style/RowSub" android:text="VPN চালু থাকলে browser/video block হবে"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="VPN দিয়ে bypass আটকাবে"
+                    android:textColor="#B71C1C" android:textSize="10sp" android:layout_marginTop="2dp"/>
+            </LinearLayout>
+            <Switch android:id="@+id/switchVpnBlock"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <!-- App Install Block -->
+        <LinearLayout style="@style/RowCard" android:layout_marginBottom="12dp">
+            <LinearLayout style="@style/RowText">
+                <TextView style="@style/RowTitle" android:text="📦 App Install Block"/>
+                <TextView style="@style/RowSub" android:text="নতুন app install করতে PIN লাগবে"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="PIN সেট থাকলেই কাজ করবে"
+                    android:textColor="#E65100" android:textSize="10sp" android:layout_marginTop="2dp"/>
+            </LinearLayout>
+            <Switch android:id="@+id/switchInstallBlock"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <!-- ══ SCHEDULE ══ -->
+        <TextView style="@style/SectionLabel" android:text="  ⏰ TIME SCHEDULE"/>
+
+        <LinearLayout style="@style/RowCard" android:layout_marginBottom="1dp">
+            <LinearLayout style="@style/RowText">
+                <TextView style="@style/RowTitle" android:text="⏰ Time Schedule"/>
+                <TextView android:id="@+id/tvScheduleInfo"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Schedule বন্ধ আছে"
+                    android:textColor="#888888" android:textSize="11sp" android:layout_marginTop="2dp"/>
+            </LinearLayout>
+            <Button android:id="@+id/btnScheduleSet"
+                android:layout_width="wrap_content" android:layout_height="30dp"
+                android:text="Set" android:backgroundTint="#333"
+                android:textColor="#AAA" android:textSize="10sp"
+                android:paddingHorizontal="10dp" android:layout_marginEnd="8dp"/>
+            <Switch android:id="@+id/switchScheduleSettings"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <!-- ══ APPEARANCE ══ -->
+        <TextView style="@style/SectionLabel" android:text="  🎨 APPEARANCE"
+            android:layout_marginTop="12dp"/>
+
+        <LinearLayout style="@style/RowCard" android:layout_marginBottom="12dp">
+            <LinearLayout style="@style/RowText">
+                <TextView style="@style/RowTitle" android:text="🌙 Theme"/>
+                <TextView style="@style/RowSub" android:text="App এর রঙ পরিবর্তন করো"/>
+            </LinearLayout>
+            <Spinner android:id="@+id/spinnerTheme"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:backgroundTint="#666666"/>
+        </LinearLayout>
+
+        <!-- ══ BACKUP ══ -->
+        <TextView style="@style/SectionLabel" android:text="  💾 BACKUP &amp; RESTORE"/>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="সব settings (keywords, whitelist, feature toggles) backup নাও অথবা restore করো"
+            android:textColor="#444444" android:textSize="11sp" android:layout_marginBottom="8dp"/>
+
+        <Button android:id="@+id/btnExportSettings"
+            android:layout_width="match_parent" android:layout_height="44dp"
+            android:text="📤 Settings Export করো (.json)"
+            android:backgroundTint="#1565C0" android:textColor="#FFF"
+            android:textSize="13sp" android:layout_marginBottom="6dp"/>
+
+        <Button android:id="@+id/btnImportSettings"
+            android:layout_width="match_parent" android:layout_height="44dp"
+            android:text="📥 Settings Import করো (.json)"
+            android:backgroundTint="#1B5E20" android:textColor="#FFF"
+            android:textSize="13sp"/>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="⚠️ Import করলে বর্তমান settings replace হয়ে যাবে"
+            android:textColor="#333333" android:textSize="10sp" android:layout_marginTop="6dp"
+            android:layout_marginBottom="16dp"/>
+
+    </LinearLayout>
+</ScrollView>

@@ -124,13 +124,26 @@ class KeywordService : AccessibilityService() {
 
         // 4. Browser URL
         if (isBrowser(pkg)) {
+            // VPN check
+            if (VpnDetector.isBlockEnabled(this) && VpnDetector.isVpnActive(this)) {
+                block(pkg, "🔒 VPN চালু — bypass block"); return
+            }
             val url = getUrl(root)
             if (!url.isNullOrBlank()) {
                 if (isHardAdultUrl(url)) { block(pkg, "🔞 Adult site"); return }
                 if (isSoftAdultEnabled(this) && SoftAdultDetector.isSoftAdultUrl(url)) {
                     block(pkg, "🌶️ Suggestive search"); return
                 }
+                // Safe Search bypass check
+                if (SafeSearchManager.isEnabled(this) && SafeSearchManager.isSafeSearchBypassed(url)) {
+                    block(pkg, "🔍 Safe Search bypass detected"); return
+                }
             }
+        }
+
+        // 4b. VPN check for video apps
+        if (isVideoApp(pkg) && VpnDetector.isBlockEnabled(this) && VpnDetector.isVpnActive(this)) {
+            block(pkg, "🔒 VPN চালু — bypass block"); return
         }
 
         // 5. Video metadata

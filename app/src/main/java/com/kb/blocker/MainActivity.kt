@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
+        ThemeManager.applyFromPrefs(this)  // Theme apply
         dpm            = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponent = ComponentName(this, AdminReceiver::class.java)
         setupKeywords()
@@ -171,6 +172,7 @@ class MainActivity : AppCompatActivity() {
 
         b.btnViewStats.setOnClickListener { startActivity(Intent(this, StatsActivity::class.java)) }
         b.btnAiModel.setOnClickListener  { startActivity(Intent(this, ModelSettingsActivity::class.java)) }
+        b.btnAdvancedSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
         b.btnPanic.setOnClickListener {
             AlertDialog.Builder(this).setTitle("⏸️ ৩০ মিনিট বন্ধ করবে?")

@@ -167,18 +167,22 @@
         </LinearLayout>
 
         <!-- Stats + Panic -->
+        <!-- Action buttons row 1 -->
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="12dp">
+            android:orientation="horizontal" android:layout_marginBottom="4dp">
             <Button android:id="@+id/btnViewStats" android:layout_width="0dp"
                 android:layout_height="40dp" android:layout_weight="1"
-                android:text="📊 Block History" android:backgroundTint="#1A237E"
-                android:textColor="#FFF" android:textSize="12sp" android:layout_marginEnd="6dp"/>
+                android:text="📊 History" android:backgroundTint="#1A237E"
+                android:textColor="#FFF" android:textSize="11sp" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btnAdvancedSettings" android:layout_width="0dp"
+                android:layout_height="40dp" android:layout_weight="1"
+                android:text="⚙️ Settings" android:backgroundTint="#4A148C"
+                android:textColor="#FFF" android:textSize="11sp" android:layout_marginEnd="4dp"/>
             <Button android:id="@+id/btnPanic" android:layout_width="0dp"
                 android:layout_height="40dp" android:layout_weight="1"
-                android:text="⏸️ ৩০ মিনিট বন্ধ" android:backgroundTint="#37474F"
-                android:textColor="#FFF" android:textSize="12sp"/>
+                android:text="⏸️ ৩০মিনিট" android:backgroundTint="#37474F"
+                android:textColor="#FFF" android:textSize="11sp"/>
         </LinearLayout>
-
 
         <!-- AI Model -->
         <Button android:id="@+id/btnAiModel"
