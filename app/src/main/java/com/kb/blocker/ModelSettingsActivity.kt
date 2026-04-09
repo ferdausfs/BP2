@@ -283,29 +283,30 @@ class ModelSettingsActivity : AppCompatActivity() {
     }
 
     private fun doImport(uri: Uri, info: NsfwModelManager.ModelInfo) {
-        showLoading("⏳ Importing model...")
+        showLoading("⏳ Model import হচ্ছে...")
 
         bgExecutor.execute {
-            val ok = NsfwModelManager.importModel(
-                this, uri, info.suggestedType, info.inputSize)
+            val ok = NsfwModelManager.importModel(this, uri, info.suggestedType, info.inputSize)
+            if (!ok) {
+                mainHandler.post { hideLoading(); toast("❌ Import failed!") }
+                return@execute
+            }
 
-            if (ok) {
-                val loaded = NsfwModelManager.loadModel(this)
-                mainHandler.post {
-                    hideLoading()
-                    if (loaded) {
-                        toast("✅ Model imported ও loaded!")
-                        KeywordService.instance?.onNsfwModelChanged()
+            val loaded = NsfwModelManager.loadModel(this)
+            mainHandler.post {
+                hideLoading()
+                if (loaded) {
+                    val svc = KeywordService.instance
+                    if (svc != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        NsfwScanService.start(svc)
+                        toast("✅ Model import ও AI scan চালু!")
                     } else {
-                        toast("⚠️ Imported কিন্তু load হয়নি। App restart করো।")
+                        toast("✅ Model import হয়েছে — Accessibility ON করলে scan শুরু হবে")
                     }
-                    refreshUI()
+                } else {
+                    toast("⚠️ Import হয়েছে কিন্তু load হয়নি — আবার try করো")
                 }
-            } else {
-                mainHandler.post {
-                    hideLoading()
-                    toast("❌ Import failed!")
-                }
+                refreshUI()
             }
         }
     }
@@ -313,14 +314,24 @@ class ModelSettingsActivity : AppCompatActivity() {
     // ── Reload in background ──────────────────────────────────────────────────
 
     private fun reloadModelInBackground() {
+        showLoading("⏳ Model load হচ্ছে...")
         bgExecutor.execute {
             val loaded = NsfwModelManager.loadModel(this)
             mainHandler.post {
+                hideLoading()
                 if (loaded) {
-                    KeywordService.instance?.onNsfwModelChanged()
-                    toast("✅ Model loaded!")
+                    // ★ সরাসরি scan start করো — service instance এর উপর নির্ভর না করে
+                    val svc = KeywordService.instance
+                    if (svc != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        NsfwScanService.start(svc)
+                        toast("✅ Model loaded — AI scan চালু হয়েছে!")
+                    } else if (svc == null) {
+                        toast("✅ Model loaded — Accessibility Service চালু করলে scan শুরু হবে")
+                    } else {
+                        toast("✅ Model loaded (Android 11+ এ scan কাজ করে)")
+                    }
                 } else {
-                    toast("⚠️ Model load হয়নি")
+                    toast("⚠️ Model load হয়নি — model file ঠিক আছে তো?")
                 }
                 refreshUI()
             }

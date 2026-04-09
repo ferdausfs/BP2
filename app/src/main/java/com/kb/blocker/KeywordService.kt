@@ -43,8 +43,22 @@ class KeywordService : AccessibilityService() {
         refreshWhitelistCache()
         showServiceNotification()
 
-        // AI scan — ModelSettingsActivity থেকে manually চালু করতে হবে
-        // Auto-start বন্ধ রাখা হয়েছে stability এর জন্য
+        // AI scan — model already loaded থাকলে auto-start, নাহলে background এ load করো
+        if (NsfwModelManager.isEnabled(this)) {
+            if (NsfwModelManager.isModelLoaded()) {
+                // Already loaded — directly start
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                    NsfwScanService.start(this)
+            } else if (NsfwModelManager.hasAnyModel(this)) {
+                // Model file আছে কিন্তু load হয়নি — bg এ load করো
+                bgPool.execute {
+                    if (NsfwModelManager.loadModel(this)) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                            handler.post { NsfwScanService.start(this) }
+                    }
+                }
+            }
+        }
     }
 
     override fun onInterrupt() {}
@@ -423,21 +437,20 @@ class KeywordService : AccessibilityService() {
 // ── Extensions ────────────────────────────────────────────────────────────────
 
 fun KeywordService.onNsfwModelChanged() {
-    if (NsfwModelManager.isEnabled(this)) {
-        if (!NsfwModelManager.isModelLoaded()) {
-            bgPool.execute {
-                if (NsfwModelManager.loadModel(this)) {
-                    Handler(Looper.getMainLooper()).post {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-                            NsfwScanService.start(this)
-                    }
-                }
-            }
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) NsfwScanService.start(this)
+    if (!NsfwModelManager.isEnabled(this)) {
+        NsfwScanService.stop(); return
+    }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
+    if (NsfwModelManager.isModelLoaded()) {
+        // Model already ready — start directly
+        NsfwScanService.start(this)
+    } else if (NsfwModelManager.hasAnyModel(this)) {
+        // Load in background then start
+        bgPool.execute {
+            if (NsfwModelManager.loadModel(this))
+                Handler(Looper.getMainLooper()).post { NsfwScanService.start(this) }
         }
-    } else {
-        NsfwScanService.stop()
     }
 }
 
