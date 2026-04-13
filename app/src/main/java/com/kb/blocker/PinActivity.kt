@@ -1,21 +1,25 @@
 package com.kb.blocker
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.widget.Button
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity  // ← FIX: was Activity
 
 /**
  * PIN entry screen
- * MODE_VERIFY  — existing PIN check (settings খুলতে)
- * MODE_SET     — নতুন PIN সেট করতে
- * MODE_CHANGE  — PIN change করতে
+ * FIX: Must extend AppCompatActivity — app uses AppCompat theme.
+ *
+ * MODE_VERIFY  — existing PIN check
+ * MODE_SET     — নতুন PIN সেট
+ * MODE_CHANGE  — PIN পরিবর্তন
  */
-class PinActivity : Activity() {
+class PinActivity : AppCompatActivity() {
 
     companion object {
         const val MODE_VERIFY  = "verify"
@@ -31,12 +35,14 @@ class PinActivity : Activity() {
             Intent(ctx, PinActivity::class.java).putExtra(EXTRA_MODE, MODE_SET)
     }
 
-    private var enteredPin = ""
-    private var confirmPin = ""
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var enteredPin   = ""
+    private var confirmPin   = ""
     private var isConfirming = false
-    private lateinit var mode: String
+    private lateinit var mode   : String
     private lateinit var tvTitle: TextView
-    private lateinit var tvDots: TextView
+    private lateinit var tvDots : TextView
     private lateinit var tvError: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,13 +58,18 @@ class PinActivity : Activity() {
         setupNumpad()
     }
 
+    override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
     private fun updateTitle() {
         tvTitle.text = when {
-            mode == MODE_SET && isConfirming -> "PIN আবার দাও (confirm)"
-            mode == MODE_SET                 -> "নতুন PIN দাও (৪ সংখ্যা)"
+            mode == MODE_SET    && isConfirming -> "PIN আবার দাও (confirm)"
+            mode == MODE_SET                    -> "নতুন PIN দাও (৪ সংখ্যা)"
             mode == MODE_CHANGE && isConfirming -> "নতুন PIN confirm করো"
-            mode == MODE_CHANGE              -> "পুরনো PIN দাও"
-            else                             -> "🔒 PIN দাও"
+            mode == MODE_CHANGE                 -> "পুরনো PIN দাও"
+            else                                -> "🔒 PIN দাও"
         }
     }
 
@@ -73,8 +84,7 @@ class PinActivity : Activity() {
         }
         findViewById<Button>(R.id.btnBackspace).setOnClickListener { backspace() }
         findViewById<Button>(R.id.btnCancel).setOnClickListener {
-            setResult(RESULT_CANCELED)
-            finish()
+            setResult(RESULT_CANCELED); finish()
         }
     }
 
@@ -95,15 +105,15 @@ class PinActivity : Activity() {
     }
 
     private fun updateDots() {
-        tvDots.text = "●".repeat(enteredPin.length) + "○".repeat((4 - enteredPin.length).coerceAtLeast(0))
+        tvDots.text = "●".repeat(enteredPin.length) +
+                      "○".repeat((4 - enteredPin.length).coerceAtLeast(0))
     }
 
     private fun processPin() {
         when (mode) {
             MODE_VERIFY -> {
                 if (PinManager.checkPin(this, enteredPin)) {
-                    setResult(RESULT_OK_PIN)
-                    finish()
+                    setResult(RESULT_OK_PIN); finish()
                 } else {
                     showError("ভুল PIN!")
                 }
@@ -113,21 +123,18 @@ class PinActivity : Activity() {
                     confirmPin   = enteredPin
                     enteredPin   = ""
                     isConfirming = true
-                    updateTitle()
-                    updateDots()
+                    updateTitle(); updateDots()
                     tvError.text = ""
                 } else {
                     if (enteredPin == confirmPin) {
                         PinManager.setPin(this, enteredPin)
-                        setResult(RESULT_OK_PIN)
-                        finish()
+                        setResult(RESULT_OK_PIN); finish()
                     } else {
                         showError("PIN মিলেনি! আবার চেষ্টা করো")
                         isConfirming = false
                         confirmPin   = ""
                         enteredPin   = ""
-                        updateDots()
-                        updateTitle()
+                        updateDots(); updateTitle()
                     }
                 }
             }
@@ -138,8 +145,7 @@ class PinActivity : Activity() {
                         enteredPin   = ""
                         isConfirming = true
                         mode         = MODE_SET
-                        updateTitle()
-                        updateDots()
+                        updateTitle(); updateDots()
                         tvError.text = ""
                     } else {
                         showError("ভুল PIN!")
@@ -168,10 +174,11 @@ class PinActivity : Activity() {
         } catch (_: Exception) {}
     }
 
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-
+    // Back button → cancel
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         setResult(RESULT_CANCELED)
-        finish()
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 }

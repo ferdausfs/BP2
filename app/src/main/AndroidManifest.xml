@@ -30,10 +30,12 @@
         </activity>
 
         <!-- Block warning screen -->
+        <!-- FIX: showOnLockScreen deprecated → showWhenLocked + turnScreenOn -->
         <activity android:name=".BlockedActivity"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.NoActionBar"
-            android:showOnLockScreen="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:excludeFromRecents="true"/>
 
         <!-- PIN screen -->
@@ -45,7 +47,6 @@
         <activity android:name=".StatsActivity"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"/>
-
 
         <!-- Advanced Settings -->
         <activity android:name=".SettingsActivity"

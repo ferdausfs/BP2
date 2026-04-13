@@ -1,34 +1,37 @@
 package com.kb.blocker
 
-import android.app.Activity
 import android.os.Bundle
 import android.widget.*
+import androidx.appcompat.app.AlertDialog       // ← AppCompat version
+import androidx.appcompat.app.AppCompatActivity  // ← FIX: was Activity
 
 /**
  * Block history + stats dashboard
+ * FIX: Must extend AppCompatActivity — app uses AppCompat theme.
+ * android.app.Activity + AppCompat theme = crash (IllegalStateException)
  */
-class StatsActivity : Activity() {
+class StatsActivity : AppCompatActivity() {
 
-    private lateinit var listView: ListView
+    private lateinit var listView    : ListView
     private lateinit var tvTodayCount: TextView
     private lateinit var tvTotalCount: TextView
-    private lateinit var btnClear: Button
-    private lateinit var btnBack: Button
+    private lateinit var btnClear    : Button
+    private lateinit var btnBack     : Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_stats)
 
-        listView     = findViewById(R.id.listBlockLog)
-        tvTodayCount = findViewById(R.id.tvTodayCount)
-        tvTotalCount = findViewById(R.id.tvTotalCount)
-        btnClear     = findViewById(R.id.btnClearLog)
-        btnBack      = findViewById(R.id.btnBack)
+        listView      = findViewById(R.id.listBlockLog)
+        tvTodayCount  = findViewById(R.id.tvTodayCount)
+        tvTotalCount  = findViewById(R.id.tvTotalCount)
+        btnClear      = findViewById(R.id.btnClearLog)
+        btnBack       = findViewById(R.id.btnBack)
 
         btnBack.setOnClickListener { finish() }
 
         btnClear.setOnClickListener {
-            android.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle("Log মুছে ফেলবে?")
                 .setPositiveButton("হ্যাঁ") { _, _ ->
                     BlockLogManager.clearAll(this)
@@ -49,10 +52,9 @@ class StatsActivity : Activity() {
         tvTotalCount.text = "মোট:  ${logs.size} টা log"
 
         if (logs.isEmpty()) {
-            val adapter = ArrayAdapter(this,
+            listView.adapter = ArrayAdapter(this,
                 android.R.layout.simple_list_item_1,
                 listOf("কোনো block history নেই"))
-            listView.adapter = adapter
             return
         }
 
@@ -62,18 +64,19 @@ class StatsActivity : Activity() {
             "🚫 ${entry.reason}"
         }
 
-        val adapter = object : ArrayAdapter<String>(
+        listView.adapter = object : ArrayAdapter<String>(
             this, android.R.layout.simple_list_item_1, items
         ) {
-            override fun getView(pos: Int, v: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+            override fun getView(pos: Int, v: android.view.View?, parent: android.view.ViewGroup)
+                : android.view.View {
                 val view = super.getView(pos, v, parent) as TextView
                 view.setTextColor(0xFFCCCCCC.toInt())
                 view.textSize = 12f
                 view.setPadding(24, 16, 24, 16)
-                view.setBackgroundColor(if (pos % 2 == 0) 0xFF141414.toInt() else 0xFF1A1A1A.toInt())
+                view.setBackgroundColor(
+                    if (pos % 2 == 0) 0xFF141414.toInt() else 0xFF1A1A1A.toInt())
                 return view
             }
         }
-        listView.adapter = adapter
     }
 }
