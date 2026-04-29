@@ -11,14 +11,13 @@ import javax.inject.Singleton
  *
  * Priority order (MUST NOT be changed):
  *   1. OWN package → always allow
- *   2. WHITELIST → always allow (overrides everything)
- *   3. BLOCKED app list → block
- *   4. KEYWORD match → block
- *   5. AI detection → block
- *   6. Default → allow
- *
- * This engine holds in-memory caches refreshed from DB.
- * The AccessibilityService calls evaluate() on every relevant event.
+ *   2. SYSTEM UI → always allow
+ *   3. WHITELIST → always allow (overrides everything)
+ *   4. SCHEDULE active → block if app in schedule
+ *   5. BLOCKED app list → block
+ *   6. KEYWORD match → block
+ *   7. AI detection → block
+ *   8. Default → allow
  */
 @Singleton
 class RulesEngine @Inject constructor() {
@@ -45,6 +44,13 @@ class RulesEngine @Inject constructor() {
             "com.nothing.launcher",
             "com.samsung.android.app.taskbar"
         )
+
+        // Suspicious URL/text patterns
+        private val SUSPICIOUS_PATTERNS = listOf(
+            PatternRule("nsfw_url", "(?i)(porn|xxx|sex|nude|nsfw)\\.(com|net|org|xyz|tv)".toRegex(), "nsfw"),
+            PatternRule("adult_keywords", "(?i)\\b(porn|xxx|nudity|hentai)\\b".toRegex(), "adult"),
+            PatternRule("gambling", "(?i)\\b(casino|betting|gambling|poker)\\b".toRegex(), "gambling")
+        )
     }
 
     // In-memory caches — refreshed via refreshCaches()
@@ -54,6 +60,11 @@ class RulesEngine @Inject constructor() {
     @Volatile private var isKeywordDetectionOn: Boolean   = true
     @Volatile private var isProtectionEnabled: Boolean    = true
     @Volatile private var isStrictMode: Boolean           = false
+
+    // Schedule-based blocking
+    @Volatile private var scheduleBlockedApps: Set<String> = emptySet()
+    @Volatile private var scheduleBlockAll: Boolean        = false
+    @Volatile private var activeScheduleName: String       = ""
 
     // ── Cache refresh (called by service on startup + DB change) ──────
 
@@ -76,6 +87,26 @@ class RulesEngine @Inject constructor() {
     fun setProtectionEnabled(enabled: Boolean)        { isProtectionEnabled  = enabled }
     fun setStrictMode(enabled: Boolean)               { isStrictMode         = enabled }
 
+    /**
+     * Update active schedule info from ScheduleManager
+     */
+    fun updateActiveSchedule(
+        scheduleName: String,
+        blockedApps: Set<String>,
+        blockAll: Boolean
+    ) {
+        activeScheduleName = scheduleName
+        scheduleBlockedApps = blockedApps
+        scheduleBlockAll = blockAll
+        Timber.d("$TAG schedule updated: '$scheduleName' blockAll=$blockAll apps=${blockedApps.size}")
+    }
+
+    fun clearActiveSchedule() {
+        activeScheduleName = ""
+        scheduleBlockedApps = emptySet()
+        scheduleBlockAll = false
+    }
+
     // ── Main evaluation ───────────────────────────────────────────────
 
     /**
@@ -97,7 +128,18 @@ class RulesEngine @Inject constructor() {
             return DetectionResult.Whitelist
         }
 
-        // Rule 4: Blocked app list
+        // Rule 4: Active schedule blocking
+        if (activeScheduleName.isNotEmpty()) {
+            if (scheduleBlockAll || packageName in scheduleBlockedApps) {
+                Timber.d("$TAG BLOCK (schedule '$activeScheduleName'): $packageName")
+                return DetectionResult.Block(
+                    BlockReason.SCHEDULE_BLOCKED,
+                    "Schedule: $activeScheduleName"
+                )
+            }
+        }
+
+        // Rule 5: Blocked app list
         if (packageName in blockedPackages) {
             Timber.d("$TAG BLOCK (app list): $packageName")
             return DetectionResult.Block(BlockReason.APP_BLOCKED, packageName)
@@ -108,7 +150,6 @@ class RulesEngine @Inject constructor() {
 
     /**
      * Evaluate screen text for keyword matches.
-     * Only called if keyword detection is enabled and app is not whitelisted.
      */
     fun evaluateText(packageName: String, text: String): DetectionResult {
         if (!isProtectionEnabled) return DetectionResult.Allow
@@ -131,7 +172,6 @@ class RulesEngine @Inject constructor() {
 
     /**
      * Evaluate AI model result.
-     * Called only if AI detection is enabled.
      */
     fun evaluateAiResult(packageName: String, unsafeScore: Float, threshold: Float): DetectionResult {
         if (!isProtectionEnabled) return DetectionResult.Allow
@@ -147,7 +187,27 @@ class RulesEngine @Inject constructor() {
     }
 
     /**
-     * Quick whitelist check for use in AI scanner loop.
+     * NEW: Check keywords - used by AiDetector
+     */
+    fun checkKeywords(text: String): KeywordMatch? {
+        if (text.isBlank()) return null
+        val lower = text.lowercase()
+        val hit = activeKeywords.firstOrNull { kw -> lower.contains(kw) }
+        return hit?.let { KeywordMatch(it, "keyword") }
+    }
+
+    /**
+     * NEW: Check suspicious patterns - used by AiDetector
+     */
+    fun checkPatterns(text: String): PatternRule? {
+        if (text.isBlank()) return null
+        return SUSPICIOUS_PATTERNS.firstOrNull { rule ->
+            rule.regex.containsMatchIn(text)
+        }
+    }
+
+    /**
+     * Quick whitelist check
      */
     fun isWhitelisted(packageName: String): Boolean =
         packageName == OUR_PACKAGE || packageName in whitelistedPackages
@@ -156,9 +216,26 @@ class RulesEngine @Inject constructor() {
 
     fun isProtectionActive(): Boolean = isProtectionEnabled
 
+    fun hasActiveSchedule(): Boolean = activeScheduleName.isNotEmpty()
+
+    fun getActiveScheduleName(): String = activeScheduleName
+
     private fun isSystemPackage(pkg: String): Boolean {
         if (pkg in SYSTEM_PACKAGES) return true
         SYSTEM_PREFIXES.forEach { if (pkg.startsWith(it)) return true }
         return false
     }
+
+    // ── Data classes for matches ─────────────────────────────────────
+
+    data class KeywordMatch(
+        val keyword: String,
+        val category: String
+    )
+
+    data class PatternRule(
+        val name: String,
+        val regex: Regex,
+        val category: String
+    )
 }
