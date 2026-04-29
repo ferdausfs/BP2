@@ -1,123 +1,374 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="#0A0A0A">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:padding="16dp">
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
-        <!-- Header -->
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:gravity="center_vertical"
-            android:layout_marginBottom="16dp">
-            <Button android:id="@+id/btnSettingsBack"
-                android:layout_width="wrap_content" android:layout_height="36dp"
-                android:text="← Back" android:backgroundTint="#2A2A2A"
-                android:textColor="#CCC" android:textSize="12sp" android:paddingHorizontal="12dp"/>
-            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:text="⚙️ Advanced Settings"
-                android:textColor="#FFFFFF" android:textSize="18sp"
-                android:textStyle="bold" android:gravity="center"/>
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- ── Detection Settings ─────────────────────────── -->
+            <TextView style="@style/SectionHeader" android:text="DETECTION" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Keyword toggle -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Keyword Detection"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Scan browser URLs and screen text"
+                                android:textSize="12sp"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_keyword"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginBottom="12dp" />
+
+                    <!-- AI toggle -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="AI Screen Detection"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="TFLite model — requires model upload"
+                                android:textSize="12sp"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_ai"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginBottom="12dp" />
+
+                    <!-- Strict Mode toggle (BUG FIX: was missing from layout) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Strict Mode"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Block all unlisted apps (whitelist-only mode)"
+                                android:textSize="12sp"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_strict_mode"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- AI Options (shown only when AI is on) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/layout_ai_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone"
+                app:cardCornerRadius="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/tv_model_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="No model loaded"
+                        android:textSize="14sp"
+                        android:layout_marginBottom="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_upload_model"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Upload .tflite Model"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_marginBottom="16dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Detection Sensitivity"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/slider_ai_threshold"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:valueFrom="0.10"
+                            android:valueTo="0.90"
+                            android:stepSize="0.05"
+                            android:value="0.40" />
+                        <TextView
+                            android:id="@+id/tv_ai_threshold_value"
+                            android:layout_width="48dp"
+                            android:layout_height="wrap_content"
+                            android:text="40%"
+                            android:textSize="13sp"
+                            android:gravity="end" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ── Unlock Delay ───────────────────────────────── -->
+            <TextView style="@style/SectionHeader" android:text="UNLOCK DELAY" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Delay before PIN entry (seconds)"
+                        android:textSize="14sp"
+                        android:layout_marginBottom="4dp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/slider_delay"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:valueFrom="10"
+                            android:valueTo="300"
+                            android:stepSize="5"
+                            android:value="30" />
+                        <TextView
+                            android:id="@+id/tv_delay_value"
+                            android:layout_width="48dp"
+                            android:layout_height="wrap_content"
+                            android:text="30s"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:gravity="end" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ── Keyword Management ─────────────────────────── -->
+            <TextView style="@style/SectionHeader" android:text="BLOCKED KEYWORDS" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:hint="Add keyword"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_keyword_input"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:imeOptions="actionDone" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_add_keyword"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Add" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_keyword_error"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/error"
+                        android:textSize="12sp"
+                        android:visibility="gone"
+                        android:layout_marginBottom="8dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_keywords"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ── Blocked Apps ───────────────────────────────── -->
+            <TextView style="@style/SectionHeader" android:text="BLOCKED APPS" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_blocked_apps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_add_blocked_app"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="＋ Add App"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ── Whitelisted Apps ───────────────────────────── -->
+            <TextView style="@style/SectionHeader" android:text="TRUSTED APPS (WHITELIST)" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardCornerRadius="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="These apps are never blocked — whitelist overrides everything."
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginBottom="8dp" />
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_whitelisted_apps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_add_whitelisted_app"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="＋ Add Trusted App"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
         </LinearLayout>
-
-        <!-- ══ SECURITY ══ -->
-        <TextView style="@style/SectionLabel" android:text="  🔐 SECURITY"/>
-
-        <!-- Safe Search -->
-        <LinearLayout style="@style/RowCard" android:layout_marginBottom="1dp">
-            <LinearLayout style="@style/RowText">
-                <TextView style="@style/RowTitle" android:text="🔍 Safe Search Enforce"/>
-                <TextView style="@style/RowSub" android:text="Google, Bing এ safe=active force করে"/>
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Unsafe search URL detect হলে block করবে"
-                    android:textColor="#1B5E20" android:textSize="10sp" android:layout_marginTop="2dp"/>
-            </LinearLayout>
-            <Switch android:id="@+id/switchSafeSearch"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- VPN Block -->
-        <LinearLayout style="@style/RowCard" android:layout_marginBottom="1dp">
-            <LinearLayout style="@style/RowText">
-                <TextView style="@style/RowTitle" android:text="🔒 VPN Block"/>
-                <TextView style="@style/RowSub" android:text="VPN চালু থাকলে browser/video block হবে"/>
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="VPN দিয়ে bypass আটকাবে"
-                    android:textColor="#B71C1C" android:textSize="10sp" android:layout_marginTop="2dp"/>
-            </LinearLayout>
-            <Switch android:id="@+id/switchVpnBlock"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- App Install Block -->
-        <LinearLayout style="@style/RowCard" android:layout_marginBottom="12dp">
-            <LinearLayout style="@style/RowText">
-                <TextView style="@style/RowTitle" android:text="📦 App Install Block"/>
-                <TextView style="@style/RowSub" android:text="নতুন app install করতে PIN লাগবে"/>
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="PIN সেট থাকলেই কাজ করবে"
-                    android:textColor="#E65100" android:textSize="10sp" android:layout_marginTop="2dp"/>
-            </LinearLayout>
-            <Switch android:id="@+id/switchInstallBlock"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- ══ SCHEDULE ══ -->
-        <TextView style="@style/SectionLabel" android:text="  ⏰ TIME SCHEDULE"/>
-
-        <LinearLayout style="@style/RowCard" android:layout_marginBottom="1dp">
-            <LinearLayout style="@style/RowText">
-                <TextView style="@style/RowTitle" android:text="⏰ Time Schedule"/>
-                <TextView android:id="@+id/tvScheduleInfo"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Schedule বন্ধ আছে"
-                    android:textColor="#888888" android:textSize="11sp" android:layout_marginTop="2dp"/>
-            </LinearLayout>
-            <Button android:id="@+id/btnScheduleSet"
-                android:layout_width="wrap_content" android:layout_height="30dp"
-                android:text="Set" android:backgroundTint="#333"
-                android:textColor="#AAA" android:textSize="10sp"
-                android:paddingHorizontal="10dp" android:layout_marginEnd="8dp"/>
-            <Switch android:id="@+id/switchScheduleSettings"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- ══ APPEARANCE ══ -->
-        <TextView style="@style/SectionLabel" android:text="  🎨 APPEARANCE"
-            android:layout_marginTop="12dp"/>
-
-        <LinearLayout style="@style/RowCard" android:layout_marginBottom="12dp">
-            <LinearLayout style="@style/RowText">
-                <TextView style="@style/RowTitle" android:text="🌙 Theme"/>
-                <TextView style="@style/RowSub" android:text="App এর রঙ পরিবর্তন করো"/>
-            </LinearLayout>
-            <Spinner android:id="@+id/spinnerTheme"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:backgroundTint="#666666"/>
-        </LinearLayout>
-
-        <!-- ══ BACKUP ══ -->
-        <TextView style="@style/SectionLabel" android:text="  💾 BACKUP &amp; RESTORE"/>
-
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="সব settings (keywords, whitelist, feature toggles) backup নাও অথবা restore করো"
-            android:textColor="#444444" android:textSize="11sp" android:layout_marginBottom="8dp"/>
-
-        <Button android:id="@+id/btnExportSettings"
-            android:layout_width="match_parent" android:layout_height="44dp"
-            android:text="📤 Settings Export করো (.json)"
-            android:backgroundTint="#1565C0" android:textColor="#FFF"
-            android:textSize="13sp" android:layout_marginBottom="6dp"/>
-
-        <Button android:id="@+id/btnImportSettings"
-            android:layout_width="match_parent" android:layout_height="44dp"
-            android:text="📥 Settings Import করো (.json)"
-            android:backgroundTint="#1B5E20" android:textColor="#FFF"
-            android:textSize="13sp"/>
-
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="⚠️ Import করলে বর্তমান settings replace হয়ে যাবে"
-            android:textColor="#333333" android:textSize="10sp" android:layout_marginTop="6dp"
-            android:layout_marginBottom="16dp"/>
-
-    </LinearLayout>
-</ScrollView>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

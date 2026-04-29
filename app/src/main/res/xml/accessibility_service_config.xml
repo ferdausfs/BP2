@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    notificationTimeout reduced 100 → 16ms (one frame). The OS coalesces
+    accessibility events for this duration before delivering — at 100ms we
+    were artificially delaying every detection by up to a tenth of a second.
+
+    canRequestFilterKeyEvents added so the foreground/back keys can also be
+    intercepted by Strict Mode in a future update.
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewTextChanged|typeViewScrolled"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows|flagRequestEnhancedWebAccessibility"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:canTakeScreenshot="true"
+    android:notificationTimeout="16"
+    android:description="@string/accessibility_service_description" />
