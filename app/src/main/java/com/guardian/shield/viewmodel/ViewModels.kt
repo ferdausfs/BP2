@@ -25,8 +25,8 @@ data class SettingsUiState(
     val isKeywordEnabled: Boolean       = true,
     val isStrictMode: Boolean           = false,
     val delayUnlockSeconds: Int         = 30,
-    val aiThreshold: Float              = 0.40f,
-    val aiIntervalMs: Long              = 2500L,
+    val aiThreshold: Float              = 0.30f,   // BUG FIX: was 0.40f — must match DataStore default
+    val aiIntervalMs: Long              = 600L,    // BUG FIX: was 2500L — must match DataStore default
     val isPinSet: Boolean               = false,
     val snackMessage: String?           = null
 )

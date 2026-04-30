@@ -36,8 +36,7 @@ data class BlockEvent(
 enum class BlockReason {
     APP_BLOCKED,
     KEYWORD_DETECTED,
-    AI_DETECTED,
-    SCHEDULE_BLOCKED  // NEW - for schedule-based blocking
+    AI_DETECTED
 }
 
 /**

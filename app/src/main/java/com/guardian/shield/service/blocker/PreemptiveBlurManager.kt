@@ -72,10 +72,22 @@ class PreemptiveBlurManager(
 
         currentPkg = packageName
 
+        // BUG FIX: Set a sentinel on the main thread BEFORE posting, so that
+        // a second synchronized call arriving while the post is queued sees
+        // currentPkg already set and returns early (prevents duplicate addView).
+        val view = buildOverlayView(message)
+        val params = buildLayoutParams()
+
         mainHandler.post {
+            // Double-check: another call may have hidden the blur between the
+            // synchronized block above and this post executing.
+            if (currentPkg != packageName) return@post
+
             try {
-                val view = buildOverlayView(message)
-                val params = buildLayoutParams()
+                if (overlayView != null) {
+                    try { wm.removeViewImmediate(overlayView!!) } catch (_: Exception) {}
+                    overlayView = null
+                }
                 wm.addView(view, params)
                 overlayView = view
 
@@ -86,6 +98,7 @@ class PreemptiveBlurManager(
                 Timber.d("$TAG showBlur for $packageName")
             } catch (e: Exception) {
                 Timber.e(e, "$TAG showBlur failed")
+                overlayView = null
             }
         }
     }

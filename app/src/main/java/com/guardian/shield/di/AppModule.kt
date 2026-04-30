@@ -33,9 +33,6 @@ object DatabaseModule {
 
     @Provides
     fun provideBlockEventDao(db: GuardianDatabase): BlockEventDao = db.blockEventDao()
-
-    @Provides
-    fun provideScheduleDao(db: GuardianDatabase): ScheduleDao = db.scheduleDao()
 }
 
 // ── Repository Module ─────────────────────────────────────────────────

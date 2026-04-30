@@ -395,7 +395,7 @@ class GuardianAccessibilityService : AccessibilityService() {
      */
     private fun onSafeFrame() {
         consecutiveSafeFrames++
-        if (consecutiveSafeFrames >= 1) {
+        if (consecutiveSafeFrames >= 2) {
             blurManager?.hideBlur()
         }
     }

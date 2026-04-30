@@ -1,7 +1,6 @@
 package com.guardian.shield.data.local.db
 
 import androidx.room.*
-import com.guardian.shield.domain.model.BlockSchedule
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -63,15 +62,6 @@ interface BlockEventDao {
     @Query("SELECT * FROM block_events ORDER BY timestamp DESC LIMIT 100")
     fun observeRecent(): Flow<List<BlockEventEntity>>
 
-    @Query("SELECT * FROM block_events ORDER BY timestamp DESC")
-    fun getAllFlow(): Flow<List<BlockEventEntity>>
-
-    @Query("SELECT * FROM block_events WHERE timestamp BETWEEN :start AND :end ORDER BY timestamp DESC")
-    fun getEventsBetween(start: Long, end: Long): Flow<List<BlockEventEntity>>
-
-    @Query("SELECT * FROM block_events WHERE timestamp BETWEEN :start AND :end")
-    suspend fun getEventsBetweenSync(start: Long, end: Long): List<BlockEventEntity>
-
     @Insert
     suspend fun insert(entity: BlockEventEntity)
 
@@ -86,38 +76,4 @@ interface BlockEventDao {
 
     @Query("DELETE FROM block_events WHERE timestamp < :cutoff")
     suspend fun deleteOlderThan(cutoff: Long)
-
-    @Query("DELETE FROM block_events")
-    suspend fun deleteAll()
-}
-
-@Dao
-interface ScheduleDao {
-
-    @Query("SELECT * FROM block_schedules ORDER BY startHour, startMinute")
-    fun getAllFlow(): Flow<List<BlockSchedule>>
-
-    @Query("SELECT * FROM block_schedules WHERE enabled = 1")
-    suspend fun getAllEnabled(): List<BlockSchedule>
-
-    @Query("SELECT * FROM block_schedules WHERE id = :id")
-    suspend fun getById(id: Long): BlockSchedule?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(schedule: BlockSchedule): Long
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(schedules: List<BlockSchedule>)
-
-    @Update
-    suspend fun update(schedule: BlockSchedule)
-
-    @Query("DELETE FROM block_schedules WHERE id = :id")
-    suspend fun deleteById(id: Long)
-
-    @Query("UPDATE block_schedules SET enabled = :enabled WHERE id = :id")
-    suspend fun setEnabled(id: Long, enabled: Boolean)
-
-    @Query("SELECT COUNT(*) FROM block_schedules")
-    suspend fun getCount(): Int
 }

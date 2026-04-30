@@ -88,13 +88,11 @@ dependencies {
     // Security / Crypto
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
-    // TensorFlow Lite — core + NNAPI/GPU delegates for hardware acceleration.
-    // The NNAPI delegate is what actually unlocks the 2-4x inference speed-up
-    // referenced in AiDetector.kt.
+    // TensorFlow Lite — core + NNAPI delegate for hardware acceleration.
+    // GPU delegate deps removed: GPU delegate is never instantiated in AiDetector.kt
+    // (only NnApiDelegate is used). Removing saves ~15MB from the APK.
     implementation 'org.tensorflow:tensorflow-lite:2.14.0'
     implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
-    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
-    implementation 'org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4'
 
     // Timber Logging
     implementation 'com.jakewharton.timber:timber:5.0.1'
