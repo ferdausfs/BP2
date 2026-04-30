@@ -1,10 +1,13 @@
 package com.haramblur.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
 import com.haramblur.ml.NsfwClassifier
 import com.haramblur.overlay.BlurOverlayManager
@@ -12,12 +15,22 @@ import com.haramblur.utils.Constants
 import com.haramblur.utils.Settings
 import kotlinx.coroutines.*
 
-@RequiresApi(Build.VERSION_CODES.R)   // Android 11+ for takeScreenshot()
+@RequiresApi(Build.VERSION_CODES.R)
 class HaramBlurAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "HaramBlur.Service"
         var instance: HaramBlurAccessibilityService? = null
+
+        private val NSFW_KEYWORDS = setOf(
+            "porn", "xxx", "nude", "naked", "sex", "adult", "nsfw",
+            "hentai", "erotic", "onlyfans", "escort",
+            "xvideos", "pornhub", "xnxx", "xhamster", "redtube"
+        )
+
+        private val IMAGE_CLASSES = setOf(
+            "ImageView", "PhotoView", "DraweeView", "FrescoImageView"
+        )
     }
 
     private lateinit var settings: Settings
@@ -27,25 +40,29 @@ class HaramBlurAccessibilityService : AccessibilityService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var lastShotTime = 0L
     private var classifyJob: Job? = null
-
-    // ---------- lifecycle ----------
+    private var consecutiveSfwCount = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instance = this
+        instance   = this
         settings   = Settings(this)
         classifier = NsfwClassifier(this)
         overlay    = BlurOverlayManager(this)
 
+        // Enable window content retrieval for View Hierarchy scanning
+        val info = serviceInfo
+        info.flags = info.flags or
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+        serviceInfo = info
+
         scope.launch {
             classifier.init()
-            Log.d(TAG, "Service connected, classifier ready=${classifier.isReady()}")
+            Log.d(TAG, "Classifier ready=${classifier.isReady()}")
         }
     }
 
-    override fun onInterrupt() {
-        Log.d(TAG, "Service interrupted")
-    }
+    override fun onInterrupt() { Log.d(TAG, "Interrupted") }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -55,29 +72,77 @@ class HaramBlurAccessibilityService : AccessibilityService() {
         scope.cancel()
     }
 
-    // ---------- event handling ----------
+    // ── event handling ────────────────────────────────────────────────────────
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         if (!settings.isEnabled) { overlay.hideBlur(); return }
 
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName) return                       // skip our own app
+        if (pkg == packageName) return
         if (settings.isWhitelisted(pkg)) { overlay.hideBlur(); return }
 
-        val type = event.eventType
-        if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
-            type == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-            scheduleCapture()
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                consecutiveSfwCount = 0
+                scheduleCapture(priority = true)
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                val root = event.source
+                val hasKeyword = root != null && scanKeywords(root)
+                val hasImage   = root != null && scanImages(root)
+                root?.recycle()
+
+                when {
+                    hasKeyword -> scheduleCapture(priority = true)
+                    hasImage   -> scheduleCapture(priority = false)
+                    overlay.isVisible() -> scheduleCapture(priority = false)
+                }
+            }
         }
     }
 
-    // ---------- capture + classify ----------
+    // ── View Hierarchy scan ──────────────────────────────────────────────────
 
-    private fun scheduleCapture() {
+    private fun scanKeywords(node: AccessibilityNodeInfo): Boolean =
+        walkTree(node, 0) { n ->
+            val t = "${n.text ?: ""}${n.contentDescription ?: ""}".lowercase()
+            NSFW_KEYWORDS.any { t.contains(it) }
+        }
+
+    private fun scanImages(node: AccessibilityNodeInfo): Boolean =
+        walkTree(node, 0) { n ->
+            val cls = n.className?.toString() ?: ""
+            if (IMAGE_CLASSES.any { cls.endsWith(it) }) {
+                val r = Rect(); n.getBoundsInScreen(r)
+                r.width() > 60 && r.height() > 60
+            } else false
+        }
+
+    /** DFS tree walk; returns true as soon as predicate matches */
+    private fun walkTree(
+        node: AccessibilityNodeInfo,
+        depth: Int,
+        predicate: (AccessibilityNodeInfo) -> Boolean
+    ): Boolean {
+        if (depth > 8) return false
+        if (predicate(node)) return true
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = walkTree(child, depth + 1, predicate)
+            child.recycle()
+            if (found) return true
+        }
+        return false
+    }
+
+    // ── capture + classify ───────────────────────────────────────────────────
+
+    private fun scheduleCapture(priority: Boolean) {
         val now = System.currentTimeMillis()
-        if (now - lastShotTime < Constants.SCREENSHOT_DEBOUNCE_MS) return
+        val debounce = if (priority) 150L else Constants.SCREENSHOT_DEBOUNCE_MS
+        if (now - lastShotTime < debounce) return
         lastShotTime = now
 
         classifyJob?.cancel()
@@ -86,10 +151,9 @@ class HaramBlurAccessibilityService : AccessibilityService() {
 
             val bmp = captureScreen() ?: return@launch
 
-            // DRM / blank frame check
             if (NsfwClassifier.isBlackFrame(bmp)) {
-                Log.d(TAG, "Black frame — DRM content, skip")
                 bmp.recycle()
+                Log.d(TAG, "Black frame — skip")
                 return@launch
             }
 
@@ -98,41 +162,39 @@ class HaramBlurAccessibilityService : AccessibilityService() {
 
             withContext(Dispatchers.Main) {
                 if (result?.isNsfw == true) {
-                    Log.d(TAG, "NSFW: ${result.topClass} conf=${result.confidence}")
+                    consecutiveSfwCount = 0
+                    Log.d(TAG, "NSFW: ${result.topClass} ${result.confidence}")
                     overlay.showBlur()
                 } else {
-                    overlay.hideBlur()
+                    consecutiveSfwCount++
+                    // Require 3 consecutive clean frames before hiding
+                    // — prevents flicker when user scrolls through feed
+                    if (consecutiveSfwCount >= 3) {
+                        overlay.hideBlur()
+                    }
                 }
             }
         }
     }
 
-    /**
-     * AccessibilityService.takeScreenshot() — Android 11+
-     * No extra permission prompt beyond enabling the accessibility service.
-     */
     private suspend fun captureScreen(): Bitmap? =
         suspendCancellableCoroutine { cont ->
             try {
-                takeScreenshot(
-                    0,               // DEFAULT_DISPLAY
-                    mainExecutor,
-                    object : TakeScreenshotCallback {
-                        override fun onSuccess(result: ScreenshotResult) {
-                            val hw  = result.hardwareBuffer
-                            val bmp = Bitmap.wrapHardwareBuffer(hw, result.colorSpace)
-                                ?.copy(Bitmap.Config.ARGB_8888, false)
-                            hw.close()
-                            cont.resume(bmp) {}
-                        }
-                        override fun onFailure(errorCode: Int) {
-                            Log.w(TAG, "Screenshot fail code=$errorCode")
-                            cont.resume(null) {}
-                        }
+                takeScreenshot(0, mainExecutor, object : TakeScreenshotCallback {
+                    override fun onSuccess(r: ScreenshotResult) {
+                        val hw  = r.hardwareBuffer
+                        val bmp = Bitmap.wrapHardwareBuffer(hw, r.colorSpace)
+                            ?.copy(Bitmap.Config.ARGB_8888, false)
+                        hw.close()
+                        cont.resume(bmp) {}
                     }
-                )
+                    override fun onFailure(code: Int) {
+                        Log.w(TAG, "Screenshot fail=$code")
+                        cont.resume(null) {}
+                    }
+                })
             } catch (e: Exception) {
-                Log.e(TAG, "takeScreenshot exception: ${e.message}")
+                Log.e(TAG, "takeScreenshot: ${e.message}")
                 cont.resume(null) {}
             }
         }
