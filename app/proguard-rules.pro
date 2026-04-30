@@ -1,0 +1,3 @@
+-keep class org.tensorflow.** { *; }
+-keep class com.haramblur.** { *; }
+-dontwarn org.tensorflow.**

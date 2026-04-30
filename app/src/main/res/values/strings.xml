@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HaramBlur</string>
+    <string name="accessibility_service_label">HaramBlur NSFW Blocker</string>
+    <string name="accessibility_service_description">HaramBlur uses accessibility to detect and blur NSFW content across all apps. No data is sent anywhere — all processing is on-device.</string>
+</resources>
