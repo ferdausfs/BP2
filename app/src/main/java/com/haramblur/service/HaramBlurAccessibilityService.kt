@@ -1,7 +1,6 @@
 package com.haramblur.service
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.ScreenshotResult
 import android.graphics.Bitmap
 import android.os.Build
 import android.util.Log
