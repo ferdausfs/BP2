@@ -54,9 +54,19 @@ class AiDetector @Inject constructor(
 
         fun isModelAvailable(ctx: Context): Boolean {
             val file = modelFile(ctx)
-            val exists = file.exists() && file.length() > 1024
-            Timber.d("$TAG isModelAvailable: exists=$exists, size=${file.length()}")
-            return exists
+            if (file.exists() && file.length() > 1024) {
+                Timber.d("$TAG isModelAvailable: true (filesDir)")
+                return true
+            }
+            // Also available if bundled in assets — use openFd().length (reliable)
+            return try {
+                val size = ctx.assets.openFd(MODEL_FILENAME).use { it.length }
+                Timber.d("$TAG isModelAvailable: true (assets, ${size/1024}KB)")
+                size > 1024
+            } catch (_: Exception) {
+                Timber.d("$TAG isModelAvailable: false")
+                false
+            }
         }
     }
 
@@ -80,9 +90,18 @@ class AiDetector @Inject constructor(
     fun load(): Boolean {
         return try {
             val file = modelFile(context)
+            // Copy from assets if not already present in filesDir
             if (!file.exists() || file.length() < 1024) {
-                Timber.w("$TAG model file missing/too small: ${file.length()} bytes")
-                return false
+                Timber.d("$TAG model not in filesDir — copying from assets…")
+                try {
+                    context.assets.open(MODEL_FILENAME).use { input ->
+                        file.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    Timber.d("$TAG model copied from assets: ${file.length() / 1024}KB")
+                } catch (e: Exception) {
+                    Timber.e(e, "$TAG failed to copy model from assets")
+                    return false
+                }
             }
 
             Timber.d("$TAG loading model: ${file.length() / 1024}KB")
